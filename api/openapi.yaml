@@ -1,0 +1,397 @@
+openapi: 3.0.3
+info:
+  title: API программы лояльности Gophermart
+  version: 1.0.0
+  description: |
+    Публичный HTTP API накопительной системы лояльности «Гофермарт».
+
+    Примечания:
+    - Аутентификация: `Authorization: Bearer <access_token>`.
+    - `POST /api/user/register`, `POST /api/user/login`, `POST /api/user/refresh` возвращают токены через заголовки ответа:
+      `Authorization: Bearer <access_token>` и `X-Refresh-Token: <refresh_token>`.
+    - Ошибки возвращаются как `text/plain` с человекочитаемым сообщением.
+servers:
+  - url: http://localhost:8080
+    description: Сервер по умолчанию (локально)
+tags:
+  - name: Auth
+    description: Регистрация и аутентификация
+  - name: Orders
+    description: Загрузка и список заказов
+  - name: Balance
+    description: Баланс и списания
+paths:
+  /api/user/register:
+    post:
+      tags: [Auth]
+      summary: Регистрация пользователя
+      description: |
+        Регистрирует нового пользователя по паре логин/пароль. При успехе также выполняет
+        аутентификацию и возвращает пару токенов через заголовки ответа.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+            examples:
+              example:
+                value:
+                  login: user
+                  password: pass
+      responses:
+        '200':
+          description: Пользователь успешно зарегистрирован и аутентифицирован
+          headers:
+            Authorization:
+              description: Access-токен в виде `Bearer <token>`
+              schema:
+                type: string
+            X-Refresh-Token:
+              description: Непрозрачный refresh-токен
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Логин уже занят
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/login:
+    post:
+      tags: [Auth]
+      summary: Аутентификация пользователя
+      description: Аутентифицирует пользователя и возвращает пару токенов через заголовки ответа.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+      responses:
+        '200':
+          description: Пользователь успешно аутентифицирован
+          headers:
+            Authorization:
+              description: Access-токен в виде `Bearer <token>`
+              schema:
+                type: string
+            X-Refresh-Token:
+              description: Refresh-токен
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Неверная пара логин/пароль
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/refresh:
+    post:
+      tags: [Auth]
+      summary: Обновление пары токенов
+      description: Ротирует refresh-токен и возвращает новую пару токенов через заголовки ответа.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Выдана новая пара токенов
+          headers:
+            Authorization:
+              description: Access-токен в виде `Bearer <token>`
+              schema:
+                type: string
+            X-Refresh-Token:
+              description: Новый refresh-токен
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/logout:
+    post:
+      tags: [Auth]
+      summary: Выход пользователя
+      description: Отзывает переданный refresh-токен.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '204':
+          description: Refresh-токен отозван
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/orders:
+    post:
+      tags: [Orders]
+      summary: Загрузка номера заказа
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+              description: Номер заказа (цифры). Может проверяться алгоритмом Луна.
+              example: '12345678903'
+      responses:
+        '200':
+          description: Номер заказа уже был загружен этим пользователем
+        '202':
+          description: Новый номер заказа принят в обработку
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Номер заказа уже был загружен другим пользователем
+        '422':
+          description: Неверный формат номера заказа
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags: [Orders]
+      summary: Получение списка загруженных номеров заказов
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Успешная обработка запроса
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Order'
+              examples:
+                example:
+                  value:
+                    - number: '9278923470'
+                      status: PROCESSED
+                      accrual: 500
+                      uploaded_at: '2020-12-10T15:15:45+03:00'
+                    - number: '12345678903'
+                      status: PROCESSING
+                      uploaded_at: '2020-12-10T15:12:01+03:00'
+        '204':
+          description: Нет данных для ответа
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/balance:
+    get:
+      tags: [Balance]
+      summary: Получение текущего баланса пользователя
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Успешная обработка запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Balance'
+              examples:
+                example:
+                  value:
+                    current: 500.5
+                    withdrawn: 42
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/balance/withdraw:
+    post:
+      tags: [Balance]
+      summary: Запрос на списание средств
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawRequest'
+      responses:
+        '200':
+          description: Успешная обработка запроса
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '402':
+          description: На счету недостаточно средств
+          content:
+            text/plain:
+              schema:
+                type: string
+        '409':
+          description: Средства уже были списаны в счет оплаты этого заказа
+        '422':
+          description: Неверный номер заказа
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/withdrawals:
+    get:
+      tags: [Balance]
+      summary: Получение информации о выводе средств
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Успешная обработка запроса
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Withdrawal'
+              examples:
+                example:
+                  value:
+                    - order: '2377225624'
+                      sum: 500
+                      processed_at: '2020-12-09T16:09:57+03:00'
+        '204':
+          description: Нет ни одного списания
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Credentials:
+      type: object
+      additionalProperties: false
+      required: [login, password]
+      properties:
+        login:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          minLength: 1
+    RefreshRequest:
+      type: object
+      additionalProperties: false
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+          minLength: 1
+    OrderStatus:
+      type: string
+      enum: [NEW, PROCESSING, INVALID, PROCESSED]
+    Order:
+      type: object
+      additionalProperties: false
+      required: [number, status, uploaded_at]
+      properties:
+        number:
+          type: string
+          description: Номер заказа
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        accrual:
+          type: number
+          format: double
+          description: Начисление в баллах. Опционально.
+          nullable: true
+        uploaded_at:
+          type: string
+          format: date-time
+          description: Временная метка RFC3339
+    Balance:
+      type: object
+      additionalProperties: false
+      required: [current, withdrawn]
+      properties:
+        current:
+          type: number
+          format: double
+          description: Текущая сумма баллов лояльности
+        withdrawn:
+          type: number
+          format: double
+          description: Сумма использованных за весь период регистрации баллов
+    WithdrawRequest:
+      type: object
+      additionalProperties: false
+      required: [order, sum]
+      properties:
+        order:
+          type: string
+          description: Номер нового заказа
+        sum:
+          type: number
+          format: double
+          minimum: 0
+          description: Сумма баллов к списанию в счет оплаты
+    Withdrawal:
+      type: object
+      additionalProperties: false
+      required: [order, sum, processed_at]
+      properties:
+        order:
+          type: string
+          description: Номер заказа
+        sum:
+          type: number
+          format: double
+          description: Сумма списания
+        processed_at:
+          type: string
+          format: date-time
+          description: Время вывода средств
+  responses:
+    BadRequest:
+      description: Неверный формат запроса
+      content:
+        text/plain:
+          schema:
+            type: string
+    Unauthorized:
+      description: Пользователь не аутентифицирован
+      content:
+        text/plain:
+          schema:
+            type: string
+    Conflict:
+      description: Конфликт
+      content:
+        text/plain:
+          schema:
+            type: string
+    UnprocessableEntity:
+      description: Некорректные данные
+      content:
+        text/plain:
+          schema:
+            type: string
+    InternalError:
+      description: Внутренняя ошибка сервера
+      content:
+        text/plain:
+          schema:
+            type: string
