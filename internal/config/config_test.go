@@ -1,11 +1,11 @@
 package config
 
 import (
-	"flag"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -13,7 +13,7 @@ import (
 // TestGetConfig_Default проверяет поведение по умолчанию, когда ни флаги, ни переменные окружения сервиса не заданы.
 func TestGetConfig_Default(t *testing.T) {
 	// Arrange
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	pflag.CommandLine = pflag.NewFlagSet(os.Args[0], pflag.ExitOnError)
 	os.Args = []string{"cmd"}
 	t.Setenv("ACCRUAL_SYSTEM_ADDRESS", "127.0.0.1:8081")
 	t.Setenv("DATABASE_URI", "postgres://user:pass@localhost:5432/db")
@@ -22,6 +22,8 @@ func TestGetConfig_Default(t *testing.T) {
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_POLL_INTERVAL"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_BATCH_SIZE"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_LOCK_TTL"))
+	require.NoError(t, os.Unsetenv("LOG_LEVEL"))
+	require.NoError(t, os.Unsetenv("LOG_FORMAT"))
 
 	// Act
 	cfg, err := GetConfig()
@@ -35,13 +37,26 @@ func TestGetConfig_Default(t *testing.T) {
 	assert.Equal(t, 2*time.Second, cfg.AccrualPollInterval)
 	assert.Equal(t, 10, cfg.AccrualBatchSize)
 	assert.Equal(t, 5*time.Minute, cfg.AccrualLockTTL)
+	assert.Equal(t, "info", cfg.LogLevel)
+	assert.Equal(t, "json", cfg.LogFormat)
 }
 
 // TestGetConfig_Flags проверяет парсинг параметров командной строки сервиса.
 func TestGetConfig_Flags(t *testing.T) {
 	// Arrange
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	os.Args = []string{"cmd", "-a=localhost:7777", "-r=localhost:8888", "-d=dburi", "-j=jwt", "-p=3s", "-b=10", "-l=30s"}
+	pflag.CommandLine = pflag.NewFlagSet(os.Args[0], pflag.ExitOnError)
+	os.Args = []string{
+		"cmd",
+		"-a=localhost:7777",
+		"-r=localhost:8888",
+		"-d=dburi",
+		"-j=jwt",
+		"-p=3s",
+		"-b=10",
+		"-l=30s",
+		"--log-level=debug",
+		"--log-format=text",
+	}
 	require.NoError(t, os.Unsetenv("RUN_ADDRESS"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_ADDRESS"))
 	require.NoError(t, os.Unsetenv("DATABASE_URI"))
@@ -49,6 +64,8 @@ func TestGetConfig_Flags(t *testing.T) {
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_POLL_INTERVAL"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_BATCH_SIZE"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_LOCK_TTL"))
+	require.NoError(t, os.Unsetenv("LOG_LEVEL"))
+	require.NoError(t, os.Unsetenv("LOG_FORMAT"))
 
 	// Act
 	cfg, err := GetConfig()
@@ -62,12 +79,56 @@ func TestGetConfig_Flags(t *testing.T) {
 	assert.Equal(t, 3*time.Second, cfg.AccrualPollInterval)
 	assert.Equal(t, 10, cfg.AccrualBatchSize)
 	assert.Equal(t, 30*time.Second, cfg.AccrualLockTTL)
+	assert.Equal(t, "debug", cfg.LogLevel)
+	assert.Equal(t, "text", cfg.LogFormat)
+}
+
+// TestGetConfig_LongNameFlags проверяет парсинг параметров командной строки сервиса, заданных длинными именами.
+func TestGetConfig_LongNameFlags(t *testing.T) {
+	// Arrange
+	pflag.CommandLine = pflag.NewFlagSet(os.Args[0], pflag.ExitOnError)
+	os.Args = []string{
+		"cmd",
+		"--run-address=localhost:7777",
+		"--accrual-address=localhost:8888",
+		"--database-uri=dburi",
+		"--jwt-secret=jwt",
+		"--accrual-poll-interval=3s",
+		"--accrual-batch-size=10",
+		"--accrual-lock-ttl=30s",
+		"--log-level=debug",
+		"--log-format=text",
+	}
+	require.NoError(t, os.Unsetenv("RUN_ADDRESS"))
+	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_ADDRESS"))
+	require.NoError(t, os.Unsetenv("DATABASE_URI"))
+	require.NoError(t, os.Unsetenv("JWT_SECRET"))
+	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_POLL_INTERVAL"))
+	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_BATCH_SIZE"))
+	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_LOCK_TTL"))
+	require.NoError(t, os.Unsetenv("LOG_LEVEL"))
+	require.NoError(t, os.Unsetenv("LOG_FORMAT"))
+
+	// Act
+	cfg, err := GetConfig()
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, "localhost:7777", cfg.RunAddr)
+	assert.Equal(t, "localhost:8888", cfg.AccrualAddr)
+	assert.Equal(t, "dburi", cfg.DatabaseURI)
+	assert.Equal(t, "jwt", cfg.JWTSecret)
+	assert.Equal(t, 3*time.Second, cfg.AccrualPollInterval)
+	assert.Equal(t, 10, cfg.AccrualBatchSize)
+	assert.Equal(t, 30*time.Second, cfg.AccrualLockTTL)
+	assert.Equal(t, "debug", cfg.LogLevel)
+	assert.Equal(t, "text", cfg.LogFormat)
 }
 
 // TestGetConfig_Env проверяет парсинг переменных окружения сервиса.
 func TestGetConfig_Env(t *testing.T) {
 	// Arrange
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	pflag.CommandLine = pflag.NewFlagSet(os.Args[0], pflag.ExitOnError)
 	os.Args = []string{"cmd"}
 	t.Setenv("RUN_ADDRESS", "127.0.0.1:9999")
 	t.Setenv("ACCRUAL_SYSTEM_ADDRESS", "127.0.0.1:8081")
@@ -76,6 +137,8 @@ func TestGetConfig_Env(t *testing.T) {
 	t.Setenv("ACCRUAL_SYSTEM_POLL_INTERVAL", "1500ms")
 	t.Setenv("ACCRUAL_SYSTEM_BATCH_SIZE", "77")
 	t.Setenv("ACCRUAL_SYSTEM_LOCK_TTL", "1m")
+	t.Setenv("LOG_LEVEL", "debug")
+	t.Setenv("LOG_FORMAT", "text")
 
 	// Act
 	cfg, err := GetConfig()
@@ -89,13 +152,26 @@ func TestGetConfig_Env(t *testing.T) {
 	assert.Equal(t, 1500*time.Millisecond, cfg.AccrualPollInterval)
 	assert.Equal(t, 77, cfg.AccrualBatchSize)
 	assert.Equal(t, 1*time.Minute, cfg.AccrualLockTTL)
+	assert.Equal(t, "debug", cfg.LogLevel)
+	assert.Equal(t, "text", cfg.LogFormat)
 }
 
 // TestGetConfig_EnvPrecedence проверяет приоритет переменных окружения над параметрами командной строки сервиса.
 func TestGetConfig_EnvPrecedence(t *testing.T) {
 	// Arrange
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	os.Args = []string{"cmd", "-a=localhost:7777", "-r=localhost:8888", "-d=dburi", "-j=jwt", "-p=3s", "-b=10", "-l=3m"}
+	pflag.CommandLine = pflag.NewFlagSet(os.Args[0], pflag.ExitOnError)
+	os.Args = []string{
+		"cmd",
+		"-a=localhost:7777",
+		"-r=localhost:8888",
+		"-d=dburi",
+		"-j=jwt",
+		"-p=3s",
+		"-b=10",
+		"-l=3m",
+		"--log-level=warn",
+		"--log-format=json",
+	}
 	t.Setenv("RUN_ADDRESS", "127.0.0.1:9999")
 	t.Setenv("ACCRUAL_SYSTEM_ADDRESS", "127.0.0.1:8081")
 	t.Setenv("DATABASE_URI", "postgres://user:pass@localhost:5432/db")
@@ -103,6 +179,8 @@ func TestGetConfig_EnvPrecedence(t *testing.T) {
 	t.Setenv("ACCRUAL_SYSTEM_POLL_INTERVAL", "1500ms")
 	t.Setenv("ACCRUAL_SYSTEM_BATCH_SIZE", "77")
 	t.Setenv("ACCRUAL_SYSTEM_LOCK_TTL", "1m")
+	t.Setenv("LOG_LEVEL", "debug")
+	t.Setenv("LOG_FORMAT", "text")
 
 	// Act
 	cfg, err := GetConfig()
@@ -116,12 +194,14 @@ func TestGetConfig_EnvPrecedence(t *testing.T) {
 	assert.Equal(t, 1500*time.Millisecond, cfg.AccrualPollInterval)
 	assert.Equal(t, 77, cfg.AccrualBatchSize)
 	assert.Equal(t, 1*time.Minute, cfg.AccrualLockTTL)
+	assert.Equal(t, "debug", cfg.LogLevel)
+	assert.Equal(t, "text", cfg.LogFormat)
 }
 
 // TestGetConfig_AccrualAddrRequired проверяет обязательность адреса сервиса расчета начислений баллов лояльности.
 func TestGetConfig_AccrualAddrRequired(t *testing.T) {
 	// Arrange
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	pflag.CommandLine = pflag.NewFlagSet(os.Args[0], pflag.ExitOnError)
 	os.Args = []string{"cmd"}
 	t.Setenv("DATABASE_URI", "postgres://user:pass@localhost:5432/db")
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_ADDRESS"))
@@ -129,6 +209,8 @@ func TestGetConfig_AccrualAddrRequired(t *testing.T) {
 	require.NoError(t, os.Unsetenv("JWT_SECRET"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_POLL_INTERVAL"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_BATCH_SIZE"))
+	require.NoError(t, os.Unsetenv("LOG_LEVEL"))
+	require.NoError(t, os.Unsetenv("LOG_FORMAT"))
 
 	// Act
 	_, err := GetConfig()
@@ -140,7 +222,7 @@ func TestGetConfig_AccrualAddrRequired(t *testing.T) {
 // TestGetConfig_DatabaseURIRequired проверяет обязательность строки подключения к БД.
 func TestGetConfig_DatabaseURIRequired(t *testing.T) {
 	// Arrange
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	pflag.CommandLine = pflag.NewFlagSet(os.Args[0], pflag.ExitOnError)
 	os.Args = []string{"cmd"}
 	t.Setenv("ACCRUAL_SYSTEM_ADDRESS", "127.0.0.1:8081")
 	require.NoError(t, os.Unsetenv("DATABASE_URI"))
@@ -148,6 +230,8 @@ func TestGetConfig_DatabaseURIRequired(t *testing.T) {
 	require.NoError(t, os.Unsetenv("JWT_SECRET"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_POLL_INTERVAL"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_BATCH_SIZE"))
+	require.NoError(t, os.Unsetenv("LOG_LEVEL"))
+	require.NoError(t, os.Unsetenv("LOG_FORMAT"))
 
 	// Act
 	_, err := GetConfig()
@@ -159,7 +243,7 @@ func TestGetConfig_DatabaseURIRequired(t *testing.T) {
 // TestGetConfig_RunAddrInvalid проверяет ошибку при некорректном адресе запуска HTTP-сервера.
 func TestGetConfig_RunAddrInvalid(t *testing.T) {
 	// Arrange
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	pflag.CommandLine = pflag.NewFlagSet(os.Args[0], pflag.ExitOnError)
 	os.Args = []string{"cmd"}
 	t.Setenv("RUN_ADDRESS", "localhost:8080/path")
 	t.Setenv("ACCRUAL_SYSTEM_ADDRESS", "127.0.0.1:8081")
@@ -167,6 +251,8 @@ func TestGetConfig_RunAddrInvalid(t *testing.T) {
 	require.NoError(t, os.Unsetenv("JWT_SECRET"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_POLL_INTERVAL"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_BATCH_SIZE"))
+	require.NoError(t, os.Unsetenv("LOG_LEVEL"))
+	require.NoError(t, os.Unsetenv("LOG_FORMAT"))
 
 	// Act
 	_, err := GetConfig()
@@ -179,7 +265,7 @@ func TestGetConfig_RunAddrInvalid(t *testing.T) {
 // лояльности.
 func TestGetConfig_AccrualAddrInvalid(t *testing.T) {
 	// Arrange
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	pflag.CommandLine = pflag.NewFlagSet(os.Args[0], pflag.ExitOnError)
 	os.Args = []string{"cmd"}
 	t.Setenv("ACCRUAL_SYSTEM_ADDRESS", "127.0.0.1:8081/path")
 	t.Setenv("DATABASE_URI", "postgres://user:pass@localhost:5432/db")
@@ -187,6 +273,8 @@ func TestGetConfig_AccrualAddrInvalid(t *testing.T) {
 	require.NoError(t, os.Unsetenv("JWT_SECRET"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_POLL_INTERVAL"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_BATCH_SIZE"))
+	require.NoError(t, os.Unsetenv("LOG_LEVEL"))
+	require.NoError(t, os.Unsetenv("LOG_FORMAT"))
 
 	// Act
 	_, err := GetConfig()

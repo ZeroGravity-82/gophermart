@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -13,16 +14,19 @@ import (
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
-	slog.SetDefault(logger)
-
 	cfg, err := config.GetConfig()
 	if err != nil {
-		slog.Error("config error", slog.Any("err", err))
+		// логгер еще не сконфигурирован
+		_, _ = fmt.Fprintf(os.Stdout, "config error: %v\n", err)
 		os.Exit(1)
 	}
+
+	logger, err := newLogger(cfg)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stdout, "logger init error: %v\n", err)
+		os.Exit(1)
+	}
+	slog.SetDefault(logger)
 
 	application, err := app.New(cfg)
 	if err != nil {

@@ -3,12 +3,13 @@ package config
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"net/url"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/spf13/pflag"
 )
 
 const (
@@ -17,6 +18,8 @@ const (
 	defaultAccrualBatchSize    = 10
 	defaultAccrualLockTTL      = 5 * time.Minute
 	defaultJWTSecret           = "secret"
+	defaultLogLevel            = "info"
+	defaultLogFormat           = "json"
 )
 
 // Config содержит параметры конфигурации сервиса.
@@ -30,31 +33,39 @@ type Config struct {
 	AccrualLockTTL      time.Duration
 	DatabaseURI         string
 	JWTSecret           string
+	LogLevel            string // debug|info|warn}error
+	LogFormat           string // json|text
 }
 
 // GetConfig читает конфигурацию из переменных окружения/флагов командной строки и возвращает итоговый Config.
 func GetConfig() (Config, error) {
 	var runAddrFlag, accrualAddrFlag string
-	flag.Func("a", runAddrUsage(), httpAddrFlagParser(&runAddrFlag))
-	flag.Func("r", "адрес системы расчета начислений", httpAddrFlagParser(&accrualAddrFlag))
-	databaseURIFlag := flag.String("d", "", "строка подключения к базе данных")
-	jwtSecretFlag := flag.String("j", defaultJWTSecret, "секрет для подписи JWT")
-	accrualPollIntervalFlag := flag.Duration(
+	pflag.FuncP("run-address", "a", runAddrUsage(), httpAddrFlagParser(&runAddrFlag))
+	pflag.FuncP("accrual-address", "r", "адрес системы расчета начислений", httpAddrFlagParser(&accrualAddrFlag))
+	databaseURIFlag := pflag.StringP("database-uri", "d", "", "строка подключения к базе данных")
+	jwtSecretFlag := pflag.StringP("jwt-secret", "j", defaultJWTSecret, "секрет для подписи JWT")
+	accrualPollIntervalFlag := pflag.DurationP(
+		"accrual-poll-interval",
 		"p",
 		defaultAccrualPollInterval,
 		"интервал опроса сервиса расчета начислений баллов лояльности",
 	)
-	accrualBatchSizeFlag := flag.Int(
+	accrualBatchSizeFlag := pflag.IntP(
+		"accrual-batch-size",
 		"b",
 		defaultAccrualBatchSize,
 		"размер пачки заказов для опроса сервиса расчета начислений баллов лояльности",
 	)
-	accrualLockTTLFlag := flag.Duration(
+	accrualLockTTLFlag := pflag.DurationP(
+		"accrual-lock-ttl",
 		"l",
 		defaultAccrualLockTTL,
 		"длительность блокировки заказов воркером работы с сервисом расчета начислений баллов лояльности",
 	)
-	flag.Parse()
+	logLevelFlag := pflag.String("log-level", defaultLogLevel, "уровень логирования: debug|info|warn|error")
+	logFormatFlag := pflag.String("log-format", defaultLogFormat, "формат логирования: json|text")
+
+	pflag.Parse()
 
 	cfg := Config{}
 	runAddr, err := getRunAddr(runAddrFlag)
@@ -82,6 +93,8 @@ func GetConfig() (Config, error) {
 		return cfg, err
 	}
 	jwts := getJWTSecret(jwtSecretFlag)
+	logLevel := getLogLevel(logLevelFlag)
+	logFormat := getLogFormat(logFormatFlag)
 
 	cfg.RunAddr = runAddr
 	cfg.AccrualAddr = accrualAddr
@@ -90,6 +103,8 @@ func GetConfig() (Config, error) {
 	cfg.AccrualPollInterval = accrualPollInterval
 	cfg.AccrualBatchSize = accrualBatchSize
 	cfg.AccrualLockTTL = accrualLockTTL
+	cfg.LogLevel = logLevel
+	cfg.LogFormat = logFormat
 	return cfg, nil
 }
 
@@ -256,4 +271,26 @@ func getJWTSecret(jwtSecretFlag *string) string {
 		return defaultJWTSecret
 	}
 	return jwtSecretEnvStr
+}
+
+func getLogLevel(logLevelFlag *string) string {
+	v, ok := os.LookupEnv("LOG_LEVEL")
+	if !ok && *logLevelFlag != "" {
+		return *logLevelFlag
+	}
+	if !ok {
+		return defaultLogLevel
+	}
+	return v
+}
+
+func getLogFormat(logFormatFlag *string) string {
+	v, ok := os.LookupEnv("LOG_FORMAT")
+	if !ok && *logFormatFlag != "" {
+		return *logFormatFlag
+	}
+	if !ok {
+		return defaultLogFormat
+	}
+	return v
 }
