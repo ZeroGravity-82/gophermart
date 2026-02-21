@@ -147,11 +147,11 @@ func (us *UserService) Logout(ctx context.Context, refreshToken string) error {
 }
 
 func (us *UserService) issueTokens(ctx context.Context, userID string) (model.Tokens, error) {
-	access, err := us.jwtm.IssueAccessToken(userID)
+	access, err := us.jwtm.IssueAccessToken(ctx, userID)
 	if err != nil {
 		return model.Tokens{}, err
 	}
-	refresh, err := us.jwtm.GenerateRefreshToken()
+	refresh, err := us.jwtm.GenerateRefreshToken(ctx)
 	if err != nil {
 		return model.Tokens{}, err
 	}

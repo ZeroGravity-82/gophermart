@@ -18,9 +18,16 @@ const (
 	defaultAccrualBatchSize    = 10
 	defaultAccrualLockTTL      = 5 * time.Minute
 	defaultJWTSecret           = "secret"
-	defaultLogLevel            = "info"
 	defaultLogFormat           = "json"
+	defaultLogLevel            = "info"
+	defaultLogAddSource        = false
 )
+
+type Logging struct {
+	Format    string // json|text
+	Level     string // debug|info|warn|error
+	AddSource bool
+}
 
 // Config содержит параметры конфигурации сервиса.
 //
@@ -33,8 +40,7 @@ type Config struct {
 	AccrualLockTTL      time.Duration
 	DatabaseURI         string
 	JWTSecret           string
-	LogLevel            string // debug|info|warn}error
-	LogFormat           string // json|text
+	Logging             Logging
 }
 
 // GetConfig читает конфигурацию из переменных окружения/флагов командной строки и возвращает итоговый Config.
@@ -62,8 +68,9 @@ func GetConfig() (Config, error) {
 		defaultAccrualLockTTL,
 		"длительность блокировки заказов воркером работы с сервисом расчета начислений баллов лояльности",
 	)
-	logLevelFlag := pflag.String("log-level", defaultLogLevel, "уровень логирования: debug|info|warn|error")
 	logFormatFlag := pflag.String("log-format", defaultLogFormat, "формат логирования: json|text")
+	logLevelFlag := pflag.String("log-level", defaultLogLevel, "уровень логирования: debug|info|warn|error")
+	logAddSourceFlag := pflag.Bool("log-add-source", defaultLogAddSource, "логировать информацию о месте вызова")
 
 	pflag.Parse()
 
@@ -95,6 +102,10 @@ func GetConfig() (Config, error) {
 	jwts := getJWTSecret(jwtSecretFlag)
 	logLevel := getLogLevel(logLevelFlag)
 	logFormat := getLogFormat(logFormatFlag)
+	logAddSource, err := getLogAddSource(*logAddSourceFlag)
+	if err != nil {
+		return cfg, err
+	}
 
 	cfg.RunAddr = runAddr
 	cfg.AccrualAddr = accrualAddr
@@ -103,8 +114,11 @@ func GetConfig() (Config, error) {
 	cfg.AccrualPollInterval = accrualPollInterval
 	cfg.AccrualBatchSize = accrualBatchSize
 	cfg.AccrualLockTTL = accrualLockTTL
-	cfg.LogLevel = logLevel
-	cfg.LogFormat = logFormat
+	cfg.Logging = Logging{
+		Format:    logFormat,
+		Level:     logLevel,
+		AddSource: logAddSource,
+	}
 	return cfg, nil
 }
 
@@ -208,7 +222,7 @@ func getAccrualPollInterval(accrualPollIntervalFlag time.Duration) (time.Duratio
 	if !ok {
 		return accrualPollIntervalFlag, nil
 	}
-	accrualPollInterval, err := time.ParseDuration(accrualPollIntervalEnvStr)
+	accrualPollIntervalEnvDuration, err := time.ParseDuration(accrualPollIntervalEnvStr)
 	if err != nil {
 		return 0, fmt.Errorf(
 			"failed to parse ACCRUAL_SYSTEM_POLL_INTERVAL environment variable value '%s' as duration: %w",
@@ -216,7 +230,7 @@ func getAccrualPollInterval(accrualPollIntervalFlag time.Duration) (time.Duratio
 			err,
 		)
 	}
-	return accrualPollInterval, nil
+	return accrualPollIntervalEnvDuration, nil
 }
 
 func getAccrualBatchSize(accrualBatchSizeFlag int) (int, error) {
@@ -240,7 +254,7 @@ func getAccrualLockTTL(accrualLockTTLFlag time.Duration) (time.Duration, error) 
 	if !ok {
 		return accrualLockTTLFlag, nil
 	}
-	accrualLockTTL, err := time.ParseDuration(accrualLockTTLEnvStr)
+	accrualLockTTLEnvDuration, err := time.ParseDuration(accrualLockTTLEnvStr)
 	if err != nil {
 		return 0, fmt.Errorf(
 			"failed to parse ACCRUAL_SYSTEM_LOCK_TTL environment variable value '%s' as duration: %w",
@@ -248,49 +262,65 @@ func getAccrualLockTTL(accrualLockTTLFlag time.Duration) (time.Duration, error) 
 			err,
 		)
 	}
-	return accrualLockTTL, nil
+	return accrualLockTTLEnvDuration, nil
 }
 
 func getDatabaseURI(databaseURIFlag *string) (string, error) {
-	databaseURIEnvStr, ok := os.LookupEnv("DATABASE_URI")
+	databaseURIEnv, ok := os.LookupEnv("DATABASE_URI")
 	if !ok && *databaseURIFlag != "" {
 		return *databaseURIFlag, nil
 	}
 	if !ok {
 		return "", errors.New("database URI is not set")
 	}
-	return databaseURIEnvStr, nil
+	return databaseURIEnv, nil
 }
 
 func getJWTSecret(jwtSecretFlag *string) string {
-	jwtSecretEnvStr, ok := os.LookupEnv("JWT_SECRET")
+	jwtSecretEnv, ok := os.LookupEnv("JWT_SECRET")
 	if !ok && *jwtSecretFlag != "" {
 		return *jwtSecretFlag
 	}
 	if !ok {
 		return defaultJWTSecret
 	}
-	return jwtSecretEnvStr
-}
-
-func getLogLevel(logLevelFlag *string) string {
-	v, ok := os.LookupEnv("LOG_LEVEL")
-	if !ok && *logLevelFlag != "" {
-		return *logLevelFlag
-	}
-	if !ok {
-		return defaultLogLevel
-	}
-	return v
+	return jwtSecretEnv
 }
 
 func getLogFormat(logFormatFlag *string) string {
-	v, ok := os.LookupEnv("LOG_FORMAT")
+	logFormatEnv, ok := os.LookupEnv("LOG_FORMAT")
 	if !ok && *logFormatFlag != "" {
 		return *logFormatFlag
 	}
 	if !ok {
 		return defaultLogFormat
 	}
-	return v
+	return logFormatEnv
+}
+
+func getLogLevel(logLevelFlag *string) string {
+	logLevelEnv, ok := os.LookupEnv("LOG_LEVEL")
+	if !ok && *logLevelFlag != "" {
+		return *logLevelFlag
+	}
+	if !ok {
+		return defaultLogLevel
+	}
+	return logLevelEnv
+}
+
+func getLogAddSource(logAddSourceFlag bool) (bool, error) {
+	logAddSourceEnvStr, ok := os.LookupEnv("LOG_ADD_SOURCE")
+	if !ok {
+		return logAddSourceFlag, nil
+	}
+	logAddSourceEnvBool, err := strconv.ParseBool(logAddSourceEnvStr)
+	if err != nil {
+		return false, fmt.Errorf(
+			"failed to parse LOG_ADD_SOURCE environment variable value '%s' as bool: %w",
+			logAddSourceEnvStr,
+			err,
+		)
+	}
+	return logAddSourceEnvBool, nil
 }

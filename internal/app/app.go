@@ -19,6 +19,7 @@ import (
 	"zerogravity-82/gophermart/internal/auth"
 	"zerogravity-82/gophermart/internal/config"
 	"zerogravity-82/gophermart/internal/httpserver"
+	"zerogravity-82/gophermart/internal/logging"
 	"zerogravity-82/gophermart/internal/repository/postgresql"
 	"zerogravity-82/gophermart/internal/service"
 )
@@ -28,10 +29,15 @@ type App struct {
 	db     *sqlx.DB
 	srv    *httpserver.HTTPServer
 	worker *service.AccrualWorker
+	logger *slog.Logger
 }
 
 // New создает App - подключается к БД, применяет миграции и настраивает прикладные сервисы.
-func New(cfg config.Config) (*App, error) {
+func New(cfg config.Config, logger *slog.Logger) (*App, error) {
+	if logger == nil {
+		logger = logging.NopLogger()
+	}
+
 	db, err := sqlx.Connect("pgx", cfg.DatabaseURI)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to the database: %w", err)
@@ -77,6 +83,7 @@ func New(cfg config.Config) (*App, error) {
 		db:     db,
 		srv:    srv,
 		worker: worker,
+		logger: logger,
 	}, nil
 }
 
@@ -98,6 +105,8 @@ func applyMigrations(db *sqlx.DB) error {
 // Run запускает HTTP-сервер и воркер работы с сервисом расчета начислений баллов лояльности.
 // Блокируется до остановки по сигналу завершения или из-за ошибки HTTP-сервера или воркера.
 func (a *App) Run(ctx context.Context) error {
+	ctx = logging.WithLogger(ctx, a.logger)
+
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error { return a.srv.Run(ctx) })
 	eg.Go(func() error { return a.worker.Run(ctx) })
@@ -108,7 +117,7 @@ func (a *App) Run(ctx context.Context) error {
 func (a *App) Close() {
 	if a.db != nil {
 		if err := a.db.Close(); err != nil {
-			slog.Error(err.Error(), slog.Any("err", err))
+			a.logger.Error("failed to close db", slog.Any("err", err))
 		}
 	}
 }

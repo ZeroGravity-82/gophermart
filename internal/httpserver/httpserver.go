@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"zerogravity-82/gophermart/internal/auth"
 	"zerogravity-82/gophermart/internal/httpserver/handler"
 	"zerogravity-82/gophermart/internal/httpserver/middleware"
+	"zerogravity-82/gophermart/internal/logging"
 	"zerogravity-82/gophermart/internal/service"
 )
 
@@ -46,20 +48,23 @@ func New(
 func (s *HTTPServer) Run(ctx context.Context) error {
 	const shutdownTimeout = 10 * time.Second
 
-	r := s.buildRouter()
+	logger := logging.FromContext(ctx)
 
 	srv := &http.Server{
 		Addr:              s.addr,
-		Handler:           r,
+		Handler:           s.buildRouter(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
 		IdleTimeout:       60 * time.Second,
+		BaseContext: func(_ net.Listener) context.Context {
+			return ctx
+		},
 	}
 
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("starting HTTP server", slog.String("addr", s.addr))
+		logger.Info("starting HTTP server", slog.String("addr", s.addr))
 		errCh <- srv.ListenAndServe()
 	}()
 
@@ -70,14 +75,14 @@ func (s *HTTPServer) Run(ctx context.Context) error {
 
 		err := srv.Shutdown(shutdownCtx)
 		if err == nil {
-			slog.Info(
+			logger.Info(
 				"stopped HTTP server",
 				slog.String("addr", s.addr),
 				slog.String("reason", "gracefully shutdown"),
 			)
 			return nil
 		}
-		slog.Error(
+		logger.Error(
 			"stopped HTTP server",
 			slog.String("addr", s.addr),
 			slog.Any("err", err),
@@ -85,14 +90,14 @@ func (s *HTTPServer) Run(ctx context.Context) error {
 		return fmt.Errorf("stopped HTTP server: %w", err)
 	case err := <-errCh:
 		if err == nil || errors.Is(err, http.ErrServerClosed) {
-			slog.Info(
+			logger.Info(
 				"stopped HTTP server",
 				slog.String("addr", s.addr),
 				slog.String("reason", "closed"),
 			)
 			return nil
 		}
-		slog.Error(
+		logger.Error(
 			"failed HTTP server",
 			slog.String("addr", s.addr),
 			slog.Any("err", err),
@@ -105,10 +110,11 @@ func (s *HTTPServer) buildRouter() http.Handler {
 	r := chi.NewRouter()
 	r.Use(
 		chimw.RequestID,
+		middleware.RequestIDLogger(),
 		chimw.RealIP,
 		chimw.Recoverer,
 		chimw.StripSlashes,
-		middleware.SlogRequestLogger(slog.Default()),
+		middleware.AccessLogger(),
 		chimw.Compress(5),
 	)
 

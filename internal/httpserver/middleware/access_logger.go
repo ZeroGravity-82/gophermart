@@ -6,14 +6,12 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
+
+	"zerogravity-82/gophermart/internal/logging"
 )
 
-// SlogRequestLogger логирует запрос с помощью log/slog.
-func SlogRequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
-	if logger == nil {
-		logger = slog.Default()
-	}
-
+// AccessLogger пишет access-лог по завершении HTTP-запроса.
+func AccessLogger() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
@@ -29,15 +27,14 @@ func SlogRequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 				slog.Int("size", ww.BytesWritten()),
 				slog.Duration("duration", duration),
 			}
-			if reqID := middleware.GetReqID(r.Context()); reqID != "" {
-				attrs = append(attrs, slog.String("request_id", reqID))
-			}
 			if r.RemoteAddr != "" {
 				attrs = append(attrs, slog.String("remote_addr", r.RemoteAddr))
 			}
 			if r.URL.RawQuery != "" {
 				attrs = append(attrs, slog.String("query", r.URL.RawQuery))
 			}
+
+			logger := logging.FromContext(r.Context())
 			status := ww.Status()
 			switch {
 			case status >= 500:

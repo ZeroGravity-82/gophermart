@@ -36,7 +36,7 @@ func WithAuth(m *auth.JWTManager) func(next http.Handler) http.Handler {
 				http.Error(w, unauthorizedError, http.StatusUnauthorized)
 				return
 			}
-			claims, err := m.ParseAccessToken(parts[1])
+			claims, err := m.ParseAccessToken(r.Context(), parts[1])
 			if err != nil {
 				http.Error(w, unauthorizedError, http.StatusUnauthorized)
 				return

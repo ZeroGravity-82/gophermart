@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
+
+	"zerogravity-82/gophermart/internal/logging"
 )
 
 var (
@@ -26,8 +29,8 @@ type JWTManager struct {
 
 // NewJWTManager создает JWTManager.
 //
-// secret используется для подписи/проверки токенов. accessTokenTTL задает время жизни access-токена.
-// logger используется для диагностических логов; если передан нулевой логгер, логирование отключается.
+// secret используется для подписи/проверки токенов.
+// accessTokenTTL задает время жизни access-токена.
 func NewJWTManager(secret string, accessTokenTTL time.Duration) (*JWTManager, error) {
 	if secret == "" {
 		return nil, errors.New("JWT secret is empty")
@@ -48,7 +51,7 @@ type AccessClaims struct {
 // IssueAccessToken создает и подписывает новый access-токен для указанного userID.
 //
 // Возвращаемое значение — компактная строка JWT, подходящая для заголовка `Authorization: Bearer <token>`.
-func (m *JWTManager) IssueAccessToken(userID string) (string, error) {
+func (m *JWTManager) IssueAccessToken(ctx context.Context, userID string) (string, error) {
 	now := time.Now().UTC()
 	claims := AccessClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -61,10 +64,14 @@ func (m *JWTManager) IssueAccessToken(userID string) (string, error) {
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := t.SignedString(m.secret)
 	if err != nil {
-		slog.Error("failed to sign access token", slog.String("user_id", userID), slog.Any("err", err))
+		logging.FromContext(ctx).Error(
+			"failed to sign access token",
+			slog.String("user_id", userID),
+			slog.Any("err", err),
+		)
 		return "", fmt.Errorf("failed to sign access token: %w", err)
 	}
-	slog.Debug(
+	logging.FromContext(ctx).Debug(
 		"access token issued",
 		slog.String("user_id", userID),
 		slog.Time("iat", claims.IssuedAt.Time),
@@ -76,11 +83,14 @@ func (m *JWTManager) IssueAccessToken(userID string) (string, error) {
 // ParseAccessToken парсит и валидирует строку токена, после чего возвращает распарсенные утверждения.
 //
 // В случае любых ошибок парсинга/валидации/подписи возвращает ErrInvalidToken.
-func (m *JWTManager) ParseAccessToken(tokenString string) (*AccessClaims, error) {
+func (m *JWTManager) ParseAccessToken(ctx context.Context, tokenString string) (*AccessClaims, error) {
 	claims := &AccessClaims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			slog.Warn("unexpected access token signing method", slog.Any("alg", token.Header["alg"]))
+			logging.FromContext(ctx).Warn(
+				"unexpected access token signing method",
+				slog.Any("alg", token.Header["alg"]),
+			)
 			return nil, fmt.Errorf("unexpected access token signing method: %v", token.Header["alg"])
 		}
 		return m.secret, nil
@@ -98,13 +108,13 @@ func (m *JWTManager) ParseAccessToken(tokenString string) (*AccessClaims, error)
 // GenerateRefreshToken возвращает криптографически стойкий непрозрачный refresh-токен.
 //
 // Токен предполагается хранить на стороне клиента и обменивать на новый access-токен. Его необходимо считать секретом.
-func (m *JWTManager) GenerateRefreshToken() (string, error) {
+func (m *JWTManager) GenerateRefreshToken(ctx context.Context) (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		slog.Error("failed to generate refresh token", slog.Any("err", err))
+		logging.FromContext(ctx).Error("failed to generate refresh token", slog.Any("err", err))
 		return "", fmt.Errorf("failed to generate refresh token: %w", err)
 	}
-	slog.Debug("refresh token generated")
+	logging.FromContext(ctx).Debug("refresh token generated")
 
 	// URL-safe without padding.
 	return base64.RawURLEncoding.EncodeToString(b), nil

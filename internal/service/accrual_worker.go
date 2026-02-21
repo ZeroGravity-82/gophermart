@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"zerogravity-82/gophermart/internal/accrual"
+	"zerogravity-82/gophermart/internal/logging"
 	"zerogravity-82/gophermart/internal/model"
 )
 
@@ -68,7 +69,7 @@ func (w *AccrualWorker) Run(ctx context.Context) error {
 			return err
 		case <-timer.C:
 			if err := w.processOrdersWithAccrual(ctx); err != nil {
-				slog.Error("failed to process orders with accrual", slog.Any("err", err))
+				logging.FromContext(ctx).Error("failed to process orders with accrual", slog.Any("err", err))
 			}
 			timer.Reset(w.pollInterval)
 		}

@@ -12,6 +12,7 @@ import (
 
 	"zerogravity-82/gophermart/internal/httpserver/handler/dto"
 	"zerogravity-82/gophermart/internal/httpserver/middleware"
+	"zerogravity-82/gophermart/internal/logging"
 	"zerogravity-82/gophermart/internal/model"
 )
 
@@ -56,7 +57,7 @@ func RegisterHandler(us userService) http.HandlerFunc {
 				http.Error(w, err.Error(), http.StatusConflict)
 				return
 			}
-			slog.Error("register error", slog.Any("err", err))
+			logging.FromContext(r.Context()).Error("register error", slog.Any("err", err))
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
@@ -96,7 +97,7 @@ func LoginHandler(us userService) http.HandlerFunc {
 				http.Error(w, err.Error(), http.StatusUnauthorized)
 				return
 			}
-			slog.Error("login error", slog.Any("err", err))
+			logging.FromContext(r.Context()).Error("login error", slog.Any("err", err))
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
@@ -121,7 +122,7 @@ func RefreshHandler(us userService) http.HandlerFunc {
 				http.Error(w, err.Error(), http.StatusUnauthorized)
 				return
 			}
-			slog.Error("refresh error", slog.Any("err", err))
+			logging.FromContext(r.Context()).Error("refresh error", slog.Any("err", err))
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
@@ -145,7 +146,7 @@ func LogoutHandler(us userService) http.HandlerFunc {
 				http.Error(w, err.Error(), http.StatusUnauthorized)
 				return
 			}
-			slog.Error("logout error", slog.Any("err", err))
+			logging.FromContext(r.Context()).Error("logout error", slog.Any("err", err))
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
@@ -192,7 +193,7 @@ func UploadOrderHandler(os orderService) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
-		slog.Error("upload order error", slog.Any("err", err))
+		logging.FromContext(r.Context()).Error("upload order error", slog.Any("err", err))
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
@@ -210,7 +211,7 @@ func GetOrdersHandler(os orderService) http.HandlerFunc {
 
 		orders, err := os.List(r.Context(), userID)
 		if err != nil {
-			slog.Error("get orders error", slog.Any("err", err))
+			logging.FromContext(r.Context()).Error("get orders error", slog.Any("err", err))
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
@@ -226,7 +227,7 @@ func GetOrdersHandler(os orderService) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		if err = json.NewEncoder(w).Encode(resp); err != nil {
-			slog.Error("get orders encode error", slog.Any("err", err))
+			logging.FromContext(r.Context()).Error("get orders encode error", slog.Any("err", err))
 			http.Error(w, "cannot encode response", http.StatusInternalServerError)
 			return
 		}
@@ -244,7 +245,7 @@ func GetBalanceHandler(bs balanceService) http.HandlerFunc {
 
 		b, err := bs.GetBalance(r.Context(), userID)
 		if err != nil {
-			slog.Error("get balance error", slog.Any("err", err))
+			logging.FromContext(r.Context()).Error("get balance error", slog.Any("err", err))
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
@@ -255,7 +256,7 @@ func GetBalanceHandler(bs balanceService) http.HandlerFunc {
 			Withdrawn: float64(b.Withdrawn) / model.AccrualScale,
 		}
 		if err = json.NewEncoder(w).Encode(resp); err != nil {
-			slog.Error("get balance encode error", slog.Any("err", err))
+			logging.FromContext(r.Context()).Error("get balance encode error", slog.Any("err", err))
 			http.Error(w, "cannot encode response", http.StatusInternalServerError)
 			return
 		}
@@ -303,7 +304,7 @@ func WithdrawHandler(bs balanceService) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		slog.Error("withdraw error", slog.Any("err", err))
+		logging.FromContext(r.Context()).Error("withdraw error", slog.Any("err", err))
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
@@ -321,7 +322,7 @@ func GetWithdrawalsHandler(bs balanceService) http.HandlerFunc {
 
 		ws, err := bs.ListWithdrawals(r.Context(), userID)
 		if err != nil {
-			slog.Error("get withdrawals error", slog.Any("err", err))
+			logging.FromContext(r.Context()).Error("get withdrawals error", slog.Any("err", err))
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
@@ -337,7 +338,7 @@ func GetWithdrawalsHandler(bs balanceService) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		if err = json.NewEncoder(w).Encode(resp); err != nil {
-			slog.Error("get withdrawals encode error", slog.Any("err", err))
+			logging.FromContext(r.Context()).Error("get withdrawals encode error", slog.Any("err", err))
 			http.Error(w, "cannot encode response", http.StatusInternalServerError)
 			return
 		}

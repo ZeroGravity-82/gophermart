@@ -21,16 +21,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger, err := newLogger(cfg)
+	logger, err := newLogger(cfg.Logging)
 	if err != nil {
-		_, _ = fmt.Fprintf(os.Stdout, "logger init error: %v\n", err)
+		// логгер еще не сконфигурирован
+		_, _ = fmt.Fprintf(os.Stdout, "logger config error: %v\n", err)
 		os.Exit(1)
 	}
-	slog.SetDefault(logger)
 
-	application, err := app.New(cfg)
+	application, err := app.New(cfg, logger)
 	if err != nil {
-		slog.Error("app init error", slog.Any("err", err))
+		logger.Error("app init error", slog.Any("err", err))
 		os.Exit(1)
 	}
 	defer application.Close()
@@ -39,9 +39,9 @@ func main() {
 	defer stop()
 
 	if err = application.Run(ctx); err != nil {
-		slog.Error("service terminated with error", slog.Any("err", err))
+		logger.Error("service terminated with error", slog.Any("err", err))
 		os.Exit(1)
 	}
 
-	slog.Info("service stopped (graceful)")
+	logger.Info("service stopped (graceful)")
 }

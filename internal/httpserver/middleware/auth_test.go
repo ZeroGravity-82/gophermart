@@ -68,7 +68,7 @@ func TestWithAuth_OK(t *testing.T) {
 	m, err := auth.NewJWTManager("secret", 15*time.Minute)
 	require.NoError(t, err)
 
-	tok, err := m.IssueAccessToken("user-42")
+	tok, err := m.IssueAccessToken(context.Background(), "user-42")
 	require.NoError(t, err)
 
 	called := false

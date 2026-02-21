@@ -61,7 +61,7 @@ func authRequest(t *testing.T, req *http.Request, subject string) *auth.JWTManag
 	// Arrange
 	jwtm, err := auth.NewJWTManager("secret", 15*60*1e9)
 	require.NoError(t, err)
-	tok, err := jwtm.IssueAccessToken(subject)
+	tok, err := jwtm.IssueAccessToken(context.Background(), subject)
 	require.NoError(t, err)
 
 	// Act

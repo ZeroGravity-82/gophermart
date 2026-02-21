@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -77,11 +78,11 @@ func TestIssueAndParseAccessToken_OK(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act
-	tok, err := m.IssueAccessToken("user-123")
+	tok, err := m.IssueAccessToken(context.Background(), "user-123")
 	require.NoError(t, err)
 	assert.NotEmpty(t, tok)
 
-	claims, err := m.ParseAccessToken(tok)
+	claims, err := m.ParseAccessToken(context.Background(), tok)
 	require.NoError(t, err)
 
 	// Assert
@@ -98,7 +99,7 @@ func TestParseAccessToken_FailWithInvalidToken(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act
-	_, err = m.ParseAccessToken("not-a-jwt")
+	_, err = m.ParseAccessToken(context.Background(), "not-a-jwt")
 
 	// Assert
 	require.Error(t, err)
@@ -113,11 +114,11 @@ func TestParseAccessToken_FailWithWrongSecret(t *testing.T) {
 	m2, err := NewJWTManager("secret-2", 15*time.Minute)
 	require.NoError(t, err)
 
-	tok, err := m1.IssueAccessToken("user-123")
+	tok, err := m1.IssueAccessToken(context.Background(), "user-123")
 	require.NoError(t, err)
 
 	// Act
-	_, err = m2.ParseAccessToken(tok)
+	_, err = m2.ParseAccessToken(context.Background(), tok)
 
 	// Assert
 	require.Error(t, err)
@@ -130,14 +131,14 @@ func TestParseAccessToken_FailWithExpiredToken(t *testing.T) {
 	m, err := NewJWTManager("secret", 1*time.Millisecond)
 	require.NoError(t, err)
 
-	tok, err := m.IssueAccessToken("user-123")
+	tok, err := m.IssueAccessToken(context.Background(), "user-123")
 	require.NoError(t, err)
 
 	// Гарантируем, что токен истек
 	time.Sleep(10 * time.Millisecond)
 
 	// Act
-	_, err = m.ParseAccessToken(tok)
+	_, err = m.ParseAccessToken(context.Background(), tok)
 
 	// Assert
 	require.Error(t, err)
@@ -157,7 +158,7 @@ func TestParseAccessToken_FailWithRejectedNonHMACAlg(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act
-	_, err = m.ParseAccessToken(tok)
+	_, err = m.ParseAccessToken(context.Background(), tok)
 
 	// Assert
 	require.Error(t, err)
@@ -171,9 +172,9 @@ func TestGenerateRefreshToken(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act
-	t1, err := m.GenerateRefreshToken()
+	t1, err := m.GenerateRefreshToken(context.Background())
 	require.NoError(t, err)
-	t2, err := m.GenerateRefreshToken()
+	t2, err := m.GenerateRefreshToken(context.Background())
 	require.NoError(t, err)
 
 	// Assert
