@@ -125,10 +125,10 @@ func mapAccrualResponse(resp accrual.GetAccrualAPIResponse) (model.OrderStatus, 
 		if resp.Accrual == nil {
 			minorUnits = 0
 		} else {
-			var ok bool
-			minorUnits, ok = model.AccrualMajorToMinor(*resp.Accrual)
-			if !ok {
-				return "", nil, errors.New("invalid accrual amount")
+			var err error
+			minorUnits, err = model.AccrualMajorToMinor(*resp.Accrual)
+			if err != nil {
+				return "", nil, fmt.Errorf("invalid accrual amount: %w", err)
 			}
 		}
 		return model.OrderStatusProcessed, &minorUnits, nil

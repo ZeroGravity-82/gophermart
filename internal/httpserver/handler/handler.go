@@ -159,8 +159,8 @@ func LogoutHandler(us userService) http.HandlerFunc {
 // Тело запроса должно быть text/plain с номером заказа.
 func UploadOrderHandler(os orderService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID, ok := middleware.UserIDFromContext(r.Context())
-		if !ok {
+		userID, err := middleware.UserIDFromContext(r.Context())
+		if err != nil {
 			http.Error(w, unauthorizedError, http.StatusUnauthorized)
 			return
 		}
@@ -203,8 +203,8 @@ func UploadOrderHandler(os orderService) http.HandlerFunc {
 // При отсутствии номеров заказов возвращает 204 No Content.
 func GetOrdersHandler(os orderService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID, ok := middleware.UserIDFromContext(r.Context())
-		if !ok {
+		userID, err := middleware.UserIDFromContext(r.Context())
+		if err != nil {
 			http.Error(w, unauthorizedError, http.StatusUnauthorized)
 			return
 		}
@@ -237,8 +237,8 @@ func GetOrdersHandler(os orderService) http.HandlerFunc {
 // GetBalanceHandler возвращает текущий баланс пользователя.
 func GetBalanceHandler(bs balanceService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID, ok := middleware.UserIDFromContext(r.Context())
-		if !ok {
+		userID, err := middleware.UserIDFromContext(r.Context())
+		if err != nil {
 			http.Error(w, unauthorizedError, http.StatusUnauthorized)
 			return
 		}
@@ -266,8 +266,8 @@ func GetBalanceHandler(bs balanceService) http.HandlerFunc {
 // WithdrawHandler регистрирует списание баллов лояльности в счет оплаты нового заказа.
 func WithdrawHandler(bs balanceService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID, ok := middleware.UserIDFromContext(r.Context())
-		if !ok {
+		userID, err := middleware.UserIDFromContext(r.Context())
+		if err != nil {
 			http.Error(w, unauthorizedError, http.StatusUnauthorized)
 			return
 		}
@@ -278,13 +278,13 @@ func WithdrawHandler(bs balanceService) http.HandlerFunc {
 			return
 		}
 
-		sum, ok := model.AccrualMajorToMinor(body.Sum)
-		if !ok {
+		sum, err := model.AccrualMajorToMinor(body.Sum)
+		if err != nil {
 			http.Error(w, "invalid withdrawal sum", http.StatusBadRequest)
 			return
 		}
 
-		err := bs.Withdraw(r.Context(), userID, body.Order, sum)
+		err = bs.Withdraw(r.Context(), userID, body.Order, sum)
 		if err == nil {
 			return
 		}
@@ -314,8 +314,8 @@ func WithdrawHandler(bs balanceService) http.HandlerFunc {
 // При отсутствии информации возвращает 204 No Content.
 func GetWithdrawalsHandler(bs balanceService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID, ok := middleware.UserIDFromContext(r.Context())
-		if !ok {
+		userID, err := middleware.UserIDFromContext(r.Context())
+		if err != nil {
 			http.Error(w, unauthorizedError, http.StatusUnauthorized)
 			return
 		}

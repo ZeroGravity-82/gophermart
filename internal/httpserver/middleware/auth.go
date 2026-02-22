@@ -3,6 +3,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -16,10 +17,25 @@ const (
 	unauthorizedError string = "unauthorized"
 )
 
+var (
+	// ErrUserIDNotFound возвращается, когда в контексте запроса нет userID.
+	ErrUserIDNotFound = errors.New("user ID not found in the context")
+
+	// ErrInvalidUserIDType возвращается, когда userID присутствует в контексте запроса, но имеет некорректный тип.
+	ErrInvalidUserIDType = errors.New("user ID is not of valid type")
+)
+
 // UserIDFromContext извлекает идентификатор пользователя из контекста запроса.
-func UserIDFromContext(ctx context.Context) (string, bool) {
-	v, ok := ctx.Value(userIDContextKey).(string)
-	return v, ok
+func UserIDFromContext(ctx context.Context) (string, error) {
+	value := ctx.Value(userIDContextKey)
+	if value == nil {
+		return "", ErrUserIDNotFound
+	}
+	v, ok := value.(string)
+	if !ok {
+		return "", ErrInvalidUserIDType
+	}
+	return v, nil
 }
 
 // WithAuth возвращает middleware, который проверяет access-токен и добавляет userID в контекст.

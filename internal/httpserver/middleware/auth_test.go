@@ -74,8 +74,8 @@ func TestWithAuth_OK(t *testing.T) {
 	called := false
 	h := WithAuth(m)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
-		userID, ok := UserIDFromContext(r.Context())
-		assert.True(t, ok)
+		userID, err := UserIDFromContext(r.Context())
+		require.NoError(t, err)
 		assert.Equal(t, "user-42", userID)
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -97,8 +97,23 @@ func TestUserIDFromContext_WithNoUserID(t *testing.T) {
 	ctx := context.Background()
 
 	// Act
-	_, ok := UserIDFromContext(ctx)
+	_, err := UserIDFromContext(ctx)
 
 	// Assert
-	assert.False(t, ok)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrUserIDNotFound)
+}
+
+// TestUserIDFromContext_WithInvalidType проверяет поведение UserIDFromContext при некорректном типе значения в
+// контексте.
+func TestUserIDFromContext_WithInvalidType(t *testing.T) {
+	// Arrange
+	ctx := context.WithValue(context.Background(), userIDContextKey, 123)
+
+	// Act
+	_, err := UserIDFromContext(ctx)
+
+	// Assert
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInvalidUserIDType)
 }
