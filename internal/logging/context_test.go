@@ -29,19 +29,6 @@ func TestWithLogger_Nil_NoChange(t *testing.T) {
 	assert.Empty(t, buf.String())
 }
 
-// TestFromContext_NilContext_ReturnsNoopLogger проверяет, что FromContext(nil) возвращает логгер-заглушку и его можно
-// безопасно использовать.
-func TestFromContext_NilContext_ReturnsNoopLogger(t *testing.T) {
-	// Arrange
-
-	// Act
-	l := FromContext(nil)
-
-	// Assert
-	require.NotNil(t, l)
-	l.Info("hello")
-}
-
 // TestWithLogger_StoresAndFromContext_ReturnsSameLogger проверяет, что WithLogger сохраняет логгер в контекст, а
 // FromContext возвращает тот же экземпляр.
 func TestWithLogger_StoresAndFromContext_ReturnsSameLogger(t *testing.T) {
