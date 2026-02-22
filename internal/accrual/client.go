@@ -168,6 +168,8 @@ func (c *Client) doGetAccrual(ctx context.Context, orderNumber string) func() (G
 					case <-attemptCtx.Done():
 						return GetAccrualAPIResponse{}, backoff.Permanent(attemptCtx.Err())
 					}
+				} else {
+					err = fmt.Errorf("%w: invalid Retry-After header %q: %v", err, ra, convErr)
 				}
 			}
 			return GetAccrualAPIResponse{}, err
