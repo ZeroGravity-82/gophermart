@@ -28,20 +28,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := run(cfg, logger); err != nil {
+		logger.Error("service terminated with error", slog.Any("err", err))
+		os.Exit(1)
+	}
+	logger.Info("service stopped (graceful)")
+}
+
+func run(cfg config.Config, logger *slog.Logger) error {
 	application, err := app.New(cfg, logger)
 	if err != nil {
-		logger.Error("app init error", slog.Any("err", err))
-		os.Exit(1)
+		return fmt.Errorf("app init error: %w", err)
 	}
 	defer application.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if err = application.Run(ctx); err != nil {
-		logger.Error("service terminated with error", slog.Any("err", err))
-		os.Exit(1)
+	if err := application.Run(ctx); err != nil {
+		return err
 	}
-
-	logger.Info("service stopped (graceful)")
+	return nil
 }
