@@ -9,17 +9,16 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
-
-	"github.com/cenkalti/backoff/v5"
 )
 
 const (
-	urlGetAccrualPrefix string        = "/api/orders"
-	maxRetries          uint          = 3
-	requestTimeout      time.Duration = 30 * time.Second
+	urlGetAccrualPrefix string = "/api/orders"
+	maxRetries          uint   = 3
+
+	// requestTimeout задает тайм-аут на каждую попытку отправки запроса.
+	requestTimeout time.Duration = 30 * time.Second
 
 	// httpClientTimeout является подстраховкой от зависаний транспорта/чтения тела ответа.
 	httpClientTimeout time.Duration = 60 * time.Second
@@ -27,11 +26,10 @@ const (
 
 // Client является HTTP-клиентом API для сервиса расчета начислений баллов лояльности.
 //
-// Он поддерживает экспоненциальную задержку при отправке повторных запросов в случае ошибок.
+// Повторные запросы и экспоненциальная задержка (backoff) реализованы во внутреннем транспортном клиенте.
 type Client struct {
-	httpClient *http.Client
+	httpClient *retryingHTTPClient
 	baseURL    string
-	backoff    func() backoff.BackOff
 }
 
 // New создает новый экземпляр Client.
@@ -51,14 +49,14 @@ func New(baseURL string) (*Client, error) {
 	}
 
 	return &Client{
-		httpClient: &http.Client{Timeout: httpClientTimeout},
-		baseURL:    baseURL,
-		backoff: func() backoff.BackOff {
-			b := backoff.NewExponentialBackOff()
-			b.InitialInterval = 200 * time.Millisecond
-			b.MaxInterval = 2 * time.Second
-			return b
-		},
+		httpClient: newRetryingHTTPClient(
+			httpClientTimeout,
+			maxRetries,
+			200*time.Millisecond,
+			2*time.Second,
+			requestTimeout,
+		),
+		baseURL: baseURL,
 	}, nil
 }
 
@@ -76,108 +74,56 @@ type GetAccrualAPIResponse struct {
 }
 
 // ErrOrderNotProcessed возвращается когда заказ не зарегистрирован в сервисе расчета начислений баллов лояльности, и
-// он вернула код HTTP-ответа 204.
+// он вернул код HTTP-ответа 204.
 var ErrOrderNotProcessed = errors.New("order is not processed in accrual system yet")
 
 // GetAccrual вызывает метод `GET /api/orders/{number}` сервиса расчета начислений баллов лояльности.
-//
-// Повторно выполняются запросы при сетевых ошибках (за исключением отмены/истечении дедлайна контекста) и ответах с
-// HTTP-кодом 5xx. Не выполняются повторно запросы при ответах с HTTP-кодом 4xx (кроме 429 и 408).
 func (c *Client) GetAccrual(ctx context.Context, orderNumber string) (GetAccrualAPIResponse, error) {
 	orderNumber = strings.TrimSpace(orderNumber)
 	if orderNumber == "" {
 		return GetAccrualAPIResponse{}, errors.New("orderNumber is empty")
 	}
 
-	op := c.doGetAccrual(ctx, orderNumber)
-	data, err := backoff.Retry(ctx, op, backoff.WithBackOff(c.backoff()), backoff.WithMaxTries(maxRetries+1))
+	urlFull, err := url.JoinPath(c.baseURL, urlGetAccrualPrefix, orderNumber)
+	if err != nil {
+		return GetAccrualAPIResponse{}, fmt.Errorf("failed to build full URL during getting accrual: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, urlFull, nil)
+	if err != nil {
+		return GetAccrualAPIResponse{}, fmt.Errorf("failed to build request during getting accrual: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return GetAccrualAPIResponse{}, fmt.Errorf("request failed: %w", err)
 	}
-	return data, nil
-}
+	defer resp.Body.Close()
 
-func (c *Client) doGetAccrual(ctx context.Context, orderNumber string) func() (GetAccrualAPIResponse, error) {
-	return func() (GetAccrualAPIResponse, error) {
-		attemptCtx, cancel := context.WithTimeout(ctx, requestTimeout)
-		defer cancel()
+	// Код 204 означает, что заказ не зарегистрирован в сервисе расчета начислений баллов лояльности,
+	// т.е. еще не обработан.
+	if resp.StatusCode == http.StatusNoContent {
+		return GetAccrualAPIResponse{}, ErrOrderNotProcessed
+	}
 
-		urlFull, err := url.JoinPath(c.baseURL, urlGetAccrualPrefix, orderNumber)
-		if err != nil {
-			return GetAccrualAPIResponse{}, fmt.Errorf("failed to build full URL during getting accrual: %w", err)
-		}
-		httpReq, err := http.NewRequestWithContext(attemptCtx, http.MethodGet, urlFull, nil)
-		if err != nil {
-			return GetAccrualAPIResponse{}, backoff.Permanent(
-				fmt.Errorf("failed to build request during getting accrual: %w", err),
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return GetAccrualAPIResponse{}, err
+	}
+
+	var apiResp GetAccrualAPIResponse
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &apiResp); err != nil {
+			return GetAccrualAPIResponse{}, fmt.Errorf(
+				"decode response failure (status=%d) during getting accrual: %w",
+				resp.StatusCode,
+				err,
 			)
 		}
-
-		resp, err := c.httpClient.Do(httpReq)
-		if err != nil {
-			// Не повторяем запрос при отмене/истечении дедлайна контекста.
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return GetAccrualAPIResponse{}, backoff.Permanent(err)
-			}
-			return GetAccrualAPIResponse{}, err
-		}
-		defer resp.Body.Close()
-
-		// Код 204 означает, что заказ не зарегистрирован в сервисе расчета начислений баллов лояльности,
-		// т.е. еще не обработан.
-		if resp.StatusCode == http.StatusNoContent {
-			return GetAccrualAPIResponse{}, backoff.Permanent(ErrOrderNotProcessed)
-		}
-
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return GetAccrualAPIResponse{}, err
-		}
-
-		var apiResp GetAccrualAPIResponse
-		if len(body) > 0 {
-			if err := json.Unmarshal(body, &apiResp); err != nil {
-				wrapperErr := fmt.Errorf(
-					"decode response failure (status=%d) during getting accrual: %w",
-					resp.StatusCode,
-					err,
-				)
-
-				// Не JSON-ответ - считаем повторяемой ошибкой только для HTTP-кода 5xx.
-				if resp.StatusCode >= http.StatusInternalServerError {
-					return GetAccrualAPIResponse{}, wrapperErr
-				}
-				return GetAccrualAPIResponse{}, backoff.Permanent(wrapperErr)
-			}
-		}
-
-		if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
-			return apiResp, nil
-		}
-
-		err = fmt.Errorf("accrual API error (status=%d): %v", resp.StatusCode, apiResp)
-
-		// Повторяем запрос только при серверной ошибке, клиентские ошибки не считаются повторяемыми (кроме 429 и 408).
-		if resp.StatusCode == http.StatusTooManyRequests {
-			// Учитываем заголовок Retry-After при его наличии.
-			if ra := resp.Header.Get("Retry-After"); ra != "" {
-				if secs, convErr := strconv.Atoi(strings.TrimSpace(ra)); convErr == nil && secs > 0 {
-					select {
-					case <-time.After(time.Duration(secs) * time.Second):
-						return GetAccrualAPIResponse{}, err
-					case <-attemptCtx.Done():
-						return GetAccrualAPIResponse{}, backoff.Permanent(attemptCtx.Err())
-					}
-				} else {
-					err = fmt.Errorf("%w: invalid Retry-After header %q: %v", err, ra, convErr)
-				}
-			}
-			return GetAccrualAPIResponse{}, err
-		}
-		if resp.StatusCode >= http.StatusInternalServerError || resp.StatusCode == http.StatusRequestTimeout {
-			return GetAccrualAPIResponse{}, err
-		}
-
-		return GetAccrualAPIResponse{}, backoff.Permanent(err)
 	}
+
+	if resp.StatusCode != http.StatusOK {
+		return GetAccrualAPIResponse{}, fmt.Errorf("accrual API error (status=%d): %v", resp.StatusCode, apiResp)
+	}
+
+	return apiResp, nil
 }
