@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -17,15 +18,13 @@ func main() {
 	cfg, err := config.GetConfig()
 	if err != nil {
 		// логгер еще не сконфигурирован
-		_, _ = fmt.Fprintf(os.Stdout, "config error: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("config error: %v", err)
 	}
 
 	logger, err := newLogger(cfg.Logging)
 	if err != nil {
 		// логгер еще не сконфигурирован
-		_, _ = fmt.Fprintf(os.Stdout, "logger config error: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("logger config error: %v", err)
 	}
 
 	if err := run(cfg, logger); err != nil {
@@ -45,8 +44,5 @@ func run(cfg config.Config, logger *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if err := application.Run(ctx); err != nil {
-		return err
-	}
-	return nil
+	return application.Run(ctx)
 }
