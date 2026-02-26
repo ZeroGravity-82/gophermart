@@ -68,7 +68,14 @@ func newRetryingHTTPClient(
 		if _, ok := ctx.Deadline(); ok {
 			return
 		}
-		attemptCtx, _ := context.WithTimeout(ctx, perAttemptTimeout)
+
+		attemptCtx, cancel := context.WithTimeout(ctx, perAttemptTimeout)
+		// retryablehttp не дает "post-attempt" хука, поэтому вызываем cancel после завершения контекста.
+		go func() {
+			<-attemptCtx.Done()
+			cancel()
+		}()
+
 		*r = *r.WithContext(attemptCtx)
 	}
 

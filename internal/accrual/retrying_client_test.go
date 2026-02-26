@@ -235,7 +235,10 @@ func TestDo_DoesNotRetryOnContextError(t *testing.T) {
 			require.NoError(t, err)
 
 			// Act
-			_, err = cl.Do(req)
+			resp, err := cl.Do(req)
+			if resp != nil && resp.Body != nil {
+				resp.Body.Close()
+			}
 
 			// Assert
 			require.Error(t, err)
