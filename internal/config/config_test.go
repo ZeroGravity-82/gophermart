@@ -21,6 +21,7 @@ func TestGetConfig_Default(t *testing.T) {
 	require.NoError(t, os.Unsetenv("JWT_SECRET"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_POLL_INTERVAL"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_BATCH_SIZE"))
+	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_WORKERS"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_LOCK_TTL"))
 	require.NoError(t, os.Unsetenv("LOG_FORMAT"))
 	require.NoError(t, os.Unsetenv("LOG_LEVEL"))
@@ -37,6 +38,7 @@ func TestGetConfig_Default(t *testing.T) {
 	assert.Equal(t, "secret", cfg.JWTSecret)
 	assert.Equal(t, 2*time.Second, cfg.AccrualPollInterval)
 	assert.Equal(t, 10, cfg.AccrualBatchSize)
+	assert.Equal(t, 5, cfg.AccrualWorkers)
 	assert.Equal(t, 5*time.Minute, cfg.AccrualLockTTL)
 	assert.Equal(t, "json", cfg.Logging.Format)
 	assert.Equal(t, "info", cfg.Logging.Level)
@@ -54,7 +56,8 @@ func TestGetConfig_Flags(t *testing.T) {
 		"-d=dburi",
 		"-j=jwt",
 		"-p=3s",
-		"-b=10",
+		"-b=20",
+		"-w=10",
 		"-l=30s",
 		"--log-format=text",
 		"--log-level=debug",
@@ -81,7 +84,8 @@ func TestGetConfig_Flags(t *testing.T) {
 	assert.Equal(t, "dburi", cfg.DatabaseURI)
 	assert.Equal(t, "jwt", cfg.JWTSecret)
 	assert.Equal(t, 3*time.Second, cfg.AccrualPollInterval)
-	assert.Equal(t, 10, cfg.AccrualBatchSize)
+	assert.Equal(t, 20, cfg.AccrualBatchSize)
+	assert.Equal(t, 10, cfg.AccrualWorkers)
 	assert.Equal(t, 30*time.Second, cfg.AccrualLockTTL)
 	assert.Equal(t, "text", cfg.Logging.Format)
 	assert.Equal(t, "debug", cfg.Logging.Level)
@@ -99,7 +103,8 @@ func TestGetConfig_LongNameFlags(t *testing.T) {
 		"--database-uri=dburi",
 		"--jwt-secret=jwt",
 		"--accrual-poll-interval=3s",
-		"--accrual-batch-size=10",
+		"--accrual-batch-size=20",
+		"--accrual-workers=10",
 		"--accrual-lock-ttl=30s",
 		"--log-format=text",
 		"--log-level=debug",
@@ -126,7 +131,8 @@ func TestGetConfig_LongNameFlags(t *testing.T) {
 	assert.Equal(t, "dburi", cfg.DatabaseURI)
 	assert.Equal(t, "jwt", cfg.JWTSecret)
 	assert.Equal(t, 3*time.Second, cfg.AccrualPollInterval)
-	assert.Equal(t, 10, cfg.AccrualBatchSize)
+	assert.Equal(t, 20, cfg.AccrualBatchSize)
+	assert.Equal(t, 10, cfg.AccrualWorkers)
 	assert.Equal(t, 30*time.Second, cfg.AccrualLockTTL)
 	assert.Equal(t, "text", cfg.Logging.Format)
 	assert.Equal(t, "debug", cfg.Logging.Level)
@@ -143,7 +149,8 @@ func TestGetConfig_Env(t *testing.T) {
 	t.Setenv("DATABASE_URI", "postgres://user:pass@localhost:5432/db")
 	t.Setenv("JWT_SECRET", "secret")
 	t.Setenv("ACCRUAL_SYSTEM_POLL_INTERVAL", "1500ms")
-	t.Setenv("ACCRUAL_SYSTEM_BATCH_SIZE", "77")
+	t.Setenv("ACCRUAL_SYSTEM_BATCH_SIZE", "20")
+	t.Setenv("ACCRUAL_SYSTEM_WORKERS", "10")
 	t.Setenv("ACCRUAL_SYSTEM_LOCK_TTL", "1m")
 	t.Setenv("LOG_FORMAT", "text")
 	t.Setenv("LOG_LEVEL", "debug")
@@ -159,7 +166,8 @@ func TestGetConfig_Env(t *testing.T) {
 	assert.Equal(t, "postgres://user:pass@localhost:5432/db", cfg.DatabaseURI)
 	assert.Equal(t, "secret", cfg.JWTSecret)
 	assert.Equal(t, 1500*time.Millisecond, cfg.AccrualPollInterval)
-	assert.Equal(t, 77, cfg.AccrualBatchSize)
+	assert.Equal(t, 20, cfg.AccrualBatchSize)
+	assert.Equal(t, 10, cfg.AccrualWorkers)
 	assert.Equal(t, 1*time.Minute, cfg.AccrualLockTTL)
 	assert.Equal(t, "text", cfg.Logging.Format)
 	assert.Equal(t, "debug", cfg.Logging.Level)
@@ -177,7 +185,8 @@ func TestGetConfig_EnvPrecedence(t *testing.T) {
 		"-d=dburi",
 		"-j=jwt",
 		"-p=3s",
-		"-b=10",
+		"-b=20",
+		"-w=10",
 		"-l=3m",
 		"--log-format=json",
 		"--log-level=warn",
@@ -188,7 +197,8 @@ func TestGetConfig_EnvPrecedence(t *testing.T) {
 	t.Setenv("DATABASE_URI", "postgres://user:pass@localhost:5432/db")
 	t.Setenv("JWT_SECRET", "secret")
 	t.Setenv("ACCRUAL_SYSTEM_POLL_INTERVAL", "1500ms")
-	t.Setenv("ACCRUAL_SYSTEM_BATCH_SIZE", "77")
+	t.Setenv("ACCRUAL_SYSTEM_BATCH_SIZE", "50")
+	t.Setenv("ACCRUAL_SYSTEM_WORKERS", "25")
 	t.Setenv("ACCRUAL_SYSTEM_LOCK_TTL", "1m")
 	t.Setenv("LOG_FORMAT", "text")
 	t.Setenv("LOG_LEVEL", "debug")
@@ -204,7 +214,8 @@ func TestGetConfig_EnvPrecedence(t *testing.T) {
 	assert.Equal(t, "postgres://user:pass@localhost:5432/db", cfg.DatabaseURI)
 	assert.Equal(t, "secret", cfg.JWTSecret)
 	assert.Equal(t, 1500*time.Millisecond, cfg.AccrualPollInterval)
-	assert.Equal(t, 77, cfg.AccrualBatchSize)
+	assert.Equal(t, 50, cfg.AccrualBatchSize)
+	assert.Equal(t, 25, cfg.AccrualWorkers)
 	assert.Equal(t, 1*time.Minute, cfg.AccrualLockTTL)
 	assert.Equal(t, "text", cfg.Logging.Format)
 	assert.Equal(t, "debug", cfg.Logging.Level)
@@ -222,6 +233,7 @@ func TestGetConfig_AccrualAddrRequired(t *testing.T) {
 	require.NoError(t, os.Unsetenv("JWT_SECRET"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_POLL_INTERVAL"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_BATCH_SIZE"))
+	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_WORKERS"))
 	require.NoError(t, os.Unsetenv("LOG_FORMAT"))
 	require.NoError(t, os.Unsetenv("LOG_LEVEL"))
 	require.NoError(t, os.Unsetenv("LOG_ADD_SOURCE"))
@@ -244,6 +256,7 @@ func TestGetConfig_DatabaseURIRequired(t *testing.T) {
 	require.NoError(t, os.Unsetenv("JWT_SECRET"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_POLL_INTERVAL"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_BATCH_SIZE"))
+	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_WORKERS"))
 	require.NoError(t, os.Unsetenv("LOG_FORMAT"))
 	require.NoError(t, os.Unsetenv("LOG_LEVEL"))
 	require.NoError(t, os.Unsetenv("LOG_ADD_SOURCE"))
@@ -266,6 +279,7 @@ func TestGetConfig_RunAddrInvalid(t *testing.T) {
 	require.NoError(t, os.Unsetenv("JWT_SECRET"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_POLL_INTERVAL"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_BATCH_SIZE"))
+	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_WORKERS"))
 	require.NoError(t, os.Unsetenv("LOG_FORMAT"))
 	require.NoError(t, os.Unsetenv("LOG_LEVEL"))
 	require.NoError(t, os.Unsetenv("LOG_ADD_SOURCE"))
@@ -289,6 +303,7 @@ func TestGetConfig_AccrualAddrInvalid(t *testing.T) {
 	require.NoError(t, os.Unsetenv("JWT_SECRET"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_POLL_INTERVAL"))
 	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_BATCH_SIZE"))
+	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_WORKERS"))
 	require.NoError(t, os.Unsetenv("LOG_FORMAT"))
 	require.NoError(t, os.Unsetenv("LOG_LEVEL"))
 	require.NoError(t, os.Unsetenv("LOG_ADD_SOURCE"))

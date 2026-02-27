@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"zerogravity-82/gophermart/internal/accrual"
@@ -23,17 +24,23 @@ type AccrualWorker struct {
 	accrualClient accrualClient
 	pollInterval  time.Duration
 	batchSize     int
+	workers       int
 }
 
 // NewAccrualWorker создает AccrualWorker.
 //
 // pollInterval задает период опроса внешнего сервиса расчета начислений баллов лояльности.
+//
 // batchSize задает максимальное количество заказов, обрабатываемых за одну итерацию.
+//
+// workers задает количество воркеров (максимум параллельных запросов) для опроса внешнего сервиса расчета начислений
+// баллов лояльности.
 func NewAccrualWorker(
 	orderRepo orderAccrualRepository,
 	accrualClient accrualClient,
 	pollInterval time.Duration,
 	batchSize int,
+	workers int,
 ) (*AccrualWorker, error) {
 	if pollInterval <= 0 {
 		return nil, errors.New("poll interval must be positive")
@@ -41,11 +48,15 @@ func NewAccrualWorker(
 	if batchSize <= 0 {
 		return nil, errors.New("batch size must be positive")
 	}
+	if workers <= 0 {
+		return nil, errors.New("workers must be positive")
+	}
 	return &AccrualWorker{
 		orderRepo:     orderRepo,
 		accrualClient: accrualClient,
 		pollInterval:  pollInterval,
 		batchSize:     batchSize,
+		workers:       workers,
 	}, nil
 }
 
@@ -54,37 +65,80 @@ type orderAccrualRepository interface {
 	ApplyAccrualResult(ctx context.Context, orderNumber string, status model.OrderStatus, accrualAmount *uint64) error
 }
 
-// Run запускает цикл обработки и работает до отмены контекста или возникновения ошибки.
-func (w *AccrualWorker) Run(ctx context.Context) error {
+// Run запускает цикл обработки и работает до отмены контекста.
+func (w *AccrualWorker) Run(ctx context.Context) {
+	logger := logging.FromContext(ctx)
+	logger.Info(
+		"starting accrual worker",
+		slog.String("poll_interval", w.pollInterval.String()),
+		slog.Int("batch_size", w.batchSize),
+		slog.Int("workers", w.workers),
+	)
+
+	orderNumberCh := make(chan string, w.batchSize)
+	defer close(orderNumberCh)
+
+	var wg sync.WaitGroup
+	w.startWorkers(ctx, logger, orderNumberCh, &wg)
+
 	timer := time.NewTimer(w.pollInterval)
 	defer timer.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			err := ctx.Err()
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return nil
-			}
-			return err
+			wg.Wait()
+			return
 		case <-timer.C:
-			if err := w.processOrdersWithAccrual(ctx); err != nil {
-				logging.FromContext(ctx).Error("failed to process orders with accrual", slog.Any("err", err))
+			if err := w.processOrdersWithAccrual(ctx, orderNumberCh); err != nil {
+				logger.Error("failed to process orders with accrual", slog.Any("err", err))
 			}
 			timer.Reset(w.pollInterval)
 		}
 	}
 }
 
-func (w *AccrualWorker) processOrdersWithAccrual(ctx context.Context) error {
+func (w *AccrualWorker) startWorkers(
+	ctx context.Context,
+	logger *slog.Logger,
+	orderNumberCh <-chan string,
+	wg *sync.WaitGroup,
+) {
+	wg.Add(w.workers)
+	for i := 0; i < w.workers; i++ {
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case orderNumber, ok := <-orderNumberCh:
+					if !ok {
+						return
+					}
+					if err := w.processOrder(ctx, orderNumber); err != nil {
+						logger.Error(
+							"failed to process the order with accrual",
+							slog.String("order", orderNumber),
+							slog.Any("err", err),
+						)
+					}
+				}
+			}
+		}()
+	}
+}
+
+func (w *AccrualWorker) processOrdersWithAccrual(ctx context.Context, orderNumberCh chan<- string) error {
 	orders, err := w.orderRepo.ListForAccrualProcessing(ctx, w.batchSize)
 	if err != nil {
 		return fmt.Errorf("failed to list orders for accrual: %w", err)
 	}
 	for _, o := range orders {
-		if err := w.processOrder(ctx, o.Number); err != nil {
-			// При первой ошибке выходим, чтобы не создавать лишнюю нагрузку.
-			return err
+		select {
+		case <-ctx.Done():
+			return nil
+		case orderNumberCh <- o.Number:
 		}
 	}
 	return nil

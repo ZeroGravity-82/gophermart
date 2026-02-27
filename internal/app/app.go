@@ -76,6 +76,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		accrualClient,
 		cfg.AccrualPollInterval,
 		cfg.AccrualBatchSize,
+		cfg.AccrualWorkers,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("worker init error: %w", err)
@@ -105,13 +106,13 @@ func applyMigrations(db *sqlx.DB) error {
 }
 
 // Run запускает HTTP-сервер и воркер работы с сервисом расчета начислений баллов лояльности.
-// Блокируется до остановки по сигналу завершения или из-за ошибки HTTP-сервера или воркера.
+// Блокируется до остановки по сигналу завершения или из-за ошибки HTTP-сервера.
 func (a *App) Run(ctx context.Context) error {
 	ctx = logging.WithLogger(ctx, a.logger)
 
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error { return a.srv.Run(ctx) })
-	eg.Go(func() error { return a.worker.Run(ctx) })
+	eg.Go(func() error { a.worker.Run(ctx); return nil })
 	return eg.Wait()
 }
 

@@ -16,6 +16,7 @@ const (
 	defaultRunAddr             = "localhost:8080"
 	defaultAccrualPollInterval = 2 * time.Second
 	defaultAccrualBatchSize    = 10
+	defaultAccrualWorkers      = 5
 	defaultAccrualLockTTL      = 5 * time.Minute
 	defaultJWTSecret           = "secret"
 	defaultLogFormat           = "json"
@@ -37,6 +38,7 @@ type Config struct {
 	AccrualAddr         string
 	AccrualPollInterval time.Duration
 	AccrualBatchSize    int
+	AccrualWorkers      int
 	AccrualLockTTL      time.Duration
 	DatabaseURI         string
 	JWTSecret           string
@@ -61,6 +63,12 @@ func GetConfig() (Config, error) {
 		"b",
 		defaultAccrualBatchSize,
 		"размер пачки заказов для опроса сервиса расчета начислений баллов лояльности",
+	)
+	accrualWorkersFlag := pflag.IntP(
+		"accrual-workers",
+		"w",
+		defaultAccrualWorkers,
+		"количество воркеров (максимум параллельных запросов) для опроса сервиса расчета начислений баллов лояльности",
 	)
 	accrualLockTTLFlag := pflag.DurationP(
 		"accrual-lock-ttl",
@@ -91,6 +99,10 @@ func GetConfig() (Config, error) {
 	if err != nil {
 		return cfg, err
 	}
+	accrualWorkers, err := getAccrualWorkers(*accrualWorkersFlag)
+	if err != nil {
+		return cfg, err
+	}
 	accrualLockTTL, err := getAccrualLockTTL(*accrualLockTTLFlag)
 	if err != nil {
 		return cfg, err
@@ -113,6 +125,7 @@ func GetConfig() (Config, error) {
 	cfg.JWTSecret = jwts
 	cfg.AccrualPollInterval = accrualPollInterval
 	cfg.AccrualBatchSize = accrualBatchSize
+	cfg.AccrualWorkers = accrualWorkers
 	cfg.AccrualLockTTL = accrualLockTTL
 	cfg.Logging = Logging{
 		Format:    logFormat,
@@ -247,6 +260,22 @@ func getAccrualBatchSize(accrualBatchSizeFlag int) (int, error) {
 		)
 	}
 	return accrualBatchSizeEnvInt, nil
+}
+
+func getAccrualWorkers(accrualWorkersFlag int) (int, error) {
+	accrualWorkersEnvStr, ok := os.LookupEnv("ACCRUAL_SYSTEM_WORKERS")
+	if !ok {
+		return accrualWorkersFlag, nil
+	}
+	accrualWorkersEnvInt, err := strconv.Atoi(accrualWorkersEnvStr)
+	if err != nil {
+		return 0, fmt.Errorf(
+			"failed to convert ACCRUAL_SYSTEM_WORKERS environment variable value '%s' to integer: %w",
+			accrualWorkersEnvStr,
+			err,
+		)
+	}
+	return accrualWorkersEnvInt, nil
 }
 
 func getAccrualLockTTL(accrualLockTTLFlag time.Duration) (time.Duration, error) {

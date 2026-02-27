@@ -19,7 +19,7 @@ func TestAccrualWorker_ProcessOrder_UnknownStatus(t *testing.T) {
 	cl := accrualClientStub{get: func(_ context.Context, _ string) (accrual.GetAccrualAPIResponse, error) {
 		return accrual.GetAccrualAPIResponse{Order: "1", Status: "WTF"}, nil
 	}}
-	w, err := NewAccrualWorker(repo, cl, 1*time.Second, 10)
+	w, err := NewAccrualWorker(repo, cl, 1*time.Second, 10, 5)
 	require.NoError(t, err)
 	ctx := context.Background()
 
