@@ -164,5 +164,7 @@ func TestGetAccrual_ReturnsErrTooManyRequestsOn429(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorAs(t, err, &tmr)
 	assert.Equal(t, 2*time.Second, tmr.RetryAfter)
+	assert.Equal(t, "2", tmr.RawRetryAfter)
+	assert.NoError(t, tmr.ParseRetryAfterError)
 	assert.Equal(t, int32(1), calls.Load())
 }

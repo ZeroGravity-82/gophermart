@@ -79,16 +79,26 @@ type GetAccrualAPIResponse struct {
 var ErrOrderNotProcessed = errors.New("order is not processed in accrual system yet")
 
 // ErrTooManyRequests возвращается, когда сервис начислений отвечает 429 Too Many Requests.
+//
 // RetryAfter содержит время, которое рекомендуется выждать перед следующей попыткой.
+//
+// RawRetryAfter содержит сырое значение заголовка Retry-After. Оно может быть пустым.
+//
+// ParseRetryAfterError содержит ошибку конвертации RawRetryAfter (если она была).
 //
 // Retry-After может быть отсутствующим или некорректным, тогда RetryAfter будет 0.
 type ErrTooManyRequests struct {
-	RetryAfter time.Duration
+	RetryAfter           time.Duration
+	RawRetryAfter        string
+	ParseRetryAfterError error
 }
 
 func (e ErrTooManyRequests) Error() string {
 	if e.RetryAfter > 0 {
 		return fmt.Sprintf("too many requests, retry after %s", e.RetryAfter)
+	}
+	if e.RawRetryAfter != "" {
+		return fmt.Sprintf("too many requests, invalid retry-after=%q", e.RawRetryAfter)
 	}
 	return "too many requests"
 }
@@ -122,13 +132,17 @@ func (c *Client) GetAccrual(ctx context.Context, orderNumber string) (GetAccrual
 	}
 
 	if resp.StatusCode == http.StatusTooManyRequests {
-		var retryAfter time.Duration
+		err429 := ErrTooManyRequests{}
 		if ra := strings.TrimSpace(resp.Header.Get("Retry-After")); ra != "" {
-			if secs, convErr := strconv.Atoi(ra); convErr == nil && secs > 0 {
-				retryAfter = time.Duration(secs) * time.Second
+			err429.RawRetryAfter = ra
+			secs, convErr := strconv.Atoi(ra)
+			if convErr != nil {
+				err429.ParseRetryAfterError = convErr
+			} else if secs > 0 {
+				err429.RetryAfter = time.Duration(secs) * time.Second
 			}
 		}
-		return GetAccrualAPIResponse{}, ErrTooManyRequests{RetryAfter: retryAfter}
+		return GetAccrualAPIResponse{}, err429
 	}
 
 	body, err := io.ReadAll(resp.Body)
