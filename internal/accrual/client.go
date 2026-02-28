@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -77,6 +78,21 @@ type GetAccrualAPIResponse struct {
 // он вернул код HTTP-ответа 204.
 var ErrOrderNotProcessed = errors.New("order is not processed in accrual system yet")
 
+// ErrTooManyRequests возвращается, когда сервис начислений отвечает 429 Too Many Requests.
+// RetryAfter содержит время, которое рекомендуется выждать перед следующей попыткой.
+//
+// Retry-After может быть отсутствующим или некорректным, тогда RetryAfter будет 0.
+type ErrTooManyRequests struct {
+	RetryAfter time.Duration
+}
+
+func (e ErrTooManyRequests) Error() string {
+	if e.RetryAfter > 0 {
+		return fmt.Sprintf("too many requests, retry after %s", e.RetryAfter)
+	}
+	return "too many requests"
+}
+
 // GetAccrual вызывает метод `GET /api/orders/{number}` сервиса расчета начислений баллов лояльности.
 func (c *Client) GetAccrual(ctx context.Context, orderNumber string) (GetAccrualAPIResponse, error) {
 	orderNumber = strings.TrimSpace(orderNumber)
@@ -103,6 +119,16 @@ func (c *Client) GetAccrual(ctx context.Context, orderNumber string) (GetAccrual
 	// т.е. еще не обработан.
 	if resp.StatusCode == http.StatusNoContent {
 		return GetAccrualAPIResponse{}, ErrOrderNotProcessed
+	}
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		var retryAfter time.Duration
+		if ra := strings.TrimSpace(resp.Header.Get("Retry-After")); ra != "" {
+			if secs, convErr := strconv.Atoi(ra); convErr == nil && secs > 0 {
+				retryAfter = time.Duration(secs) * time.Second
+			}
+		}
+		return GetAccrualAPIResponse{}, ErrTooManyRequests{RetryAfter: retryAfter}
 	}
 
 	body, err := io.ReadAll(resp.Body)

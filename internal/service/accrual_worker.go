@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"zerogravity-82/gophermart/internal/accrual"
@@ -25,6 +26,8 @@ type AccrualWorker struct {
 	pollInterval  time.Duration
 	batchSize     int
 	workers       int
+
+	sleepUntil atomic.Int64 // unix nano
 }
 
 // NewAccrualWorker создает AccrualWorker.
@@ -116,7 +119,14 @@ func (w *AccrualWorker) startWorkers(
 					if !ok {
 						return
 					}
+					if err := w.sleepIfNeeded(ctx); err != nil {
+						return
+					}
 					if err := w.processOrder(ctx, orderNumber); err != nil {
+						var tmr accrual.ErrTooManyRequests
+						if errors.As(err, &tmr) {
+							w.setSleepForAllWorkers(tmr.RetryAfter)
+						}
 						logger.Error(
 							"failed to process the order with accrual",
 							slog.String("order", orderNumber),
@@ -144,12 +154,58 @@ func (w *AccrualWorker) processOrdersWithAccrual(ctx context.Context, orderNumbe
 	return nil
 }
 
+// sleepIfNeeded блокирует выполнение до окончания периода глобального backoff.
+//
+// Возвращает ctx.Err(), если контекст был отменен во время ожидания.
+func (w *AccrualWorker) sleepIfNeeded(ctx context.Context) error {
+	until := time.Unix(0, w.sleepUntil.Load())
+	if until.IsZero() {
+		return nil
+	}
+	remaining := time.Until(until)
+	if remaining <= 0 {
+		return nil
+	}
+	t := time.NewTimer(remaining)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+// setSleepForAllWorkers увеличивает период глобального backoff.
+//
+// Если новая длительность заканчивается раньше, чем уже запланированный сон, сохраняется более длительный сон.
+func (w *AccrualWorker) setSleepForAllWorkers(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	until := time.Now().Add(d).UnixNano()
+	for {
+		prev := w.sleepUntil.Load()
+		if prev >= until {
+			return
+		}
+		if w.sleepUntil.CompareAndSwap(prev, until) {
+			return
+		}
+	}
+}
+
 func (w *AccrualWorker) processOrder(ctx context.Context, orderNumber string) error {
 	resp, err := w.accrualClient.GetAccrual(ctx, orderNumber)
 	if err != nil {
 		if errors.Is(err, accrual.ErrOrderNotProcessed) {
 			// Заказ еще не зарегистрирован в сервисе расчета начислений баллов лояльности.
 			return nil
+		}
+		var tmr accrual.ErrTooManyRequests
+		if errors.As(err, &tmr) {
+			// Сохраняем исходный тип ошибки.
+			return tmr
 		}
 		return fmt.Errorf("failed to get accrual for order %s: %w", orderNumber, err)
 	}

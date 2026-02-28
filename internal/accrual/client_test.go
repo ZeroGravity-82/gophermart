@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -133,5 +134,35 @@ func TestGetAccrual_ReturnsErrOrderNotProcessedOn204(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrOrderNotProcessed)
+	assert.Equal(t, int32(1), calls.Load())
+}
+
+// TestGetAccrual_ReturnsErrTooManyRequestsOn429 проверяет, что при ответе 429 клиент возвращает ErrTooManyRequests.
+func TestGetAccrual_ReturnsErrTooManyRequestsOn429(t *testing.T) {
+	// Arrange
+	var calls atomic.Int32
+	transport := roundTripperFunc(func(_ *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		h := make(http.Header)
+		h.Set("Retry-After", "2")
+		return &http.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Body:       io.NopCloser(bytes.NewBufferString(`rate limited`)),
+			Header:     h,
+		}, nil
+	})
+
+	cl, err := New("https://accrual.com")
+	require.NoError(t, err)
+	cl.httpClient.client.HTTPClient.Transport = transport
+
+	// Act
+	_, err = cl.GetAccrual(context.Background(), "12345678903")
+
+	// Assert
+	var tmr ErrTooManyRequests
+	require.Error(t, err)
+	assert.ErrorAs(t, err, &tmr)
+	assert.Equal(t, 2*time.Second, tmr.RetryAfter)
 	assert.Equal(t, int32(1), calls.Load())
 }

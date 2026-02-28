@@ -105,7 +105,7 @@ func TestAccrualWorker_Run_RespectsWorkersLimit(t *testing.T) {
 		return orders, nil
 	}}
 
-	// Gate blocks GetAccrual calls until we release them.
+	// gate блокирует вызовы GetAccrual, пока мы их не разблокируем.
 	gate := make(chan struct{})
 
 	var inFlight int64
@@ -144,14 +144,14 @@ func TestAccrualWorker_Run_RespectsWorkersLimit(t *testing.T) {
 	}()
 
 	// Act
-	// Let some tasks get queued and picked up.
+	// Даем времени задачам попасть в очередь и быть взятыми воркерами.
 	time.Sleep(50 * time.Millisecond)
 
 	// Assert
-	// At this point the pool should be saturated, but not exceed limit.
+	// В этот момент пул должен быть загружен, но не превышать лимит.
 	assert.LessOrEqual(t, atomic.LoadInt64(&maxInFlight), int64(workers))
 
-	// Release enough times to unblock currently running workers.
+	// Разблокируем текущее количество параллельных воркеров.
 	for i := 0; i < workers; i++ {
 		gate <- struct{}{}
 	}
@@ -163,6 +163,100 @@ func TestAccrualWorker_Run_RespectsWorkersLimit(t *testing.T) {
 		// ok
 	case <-time.After(1 * time.Second):
 		t.Fatal("worker Run did not stop after context cancellation")
+	}
+}
+
+// TestAccrualWorker_429_SleepsAllWorkers проверяет, что при 429 все воркеры начинают спать.
+func TestAccrualWorker_429_SleepsAllWorkers(t *testing.T) {
+	// Arrange
+	retryAfter := 200 * time.Millisecond
+
+	orders := []model.Order{{Number: "1"}, {Number: "2"}, {Number: "3"}, {Number: "4"}}
+	repo := &orderAccrualRepoStub{listFn: func(_ context.Context, _ int) ([]model.Order, error) {
+		return orders, nil
+	}}
+
+	// First request returns 429 with retry-after; subsequent requests block on gate.
+	var calls atomic.Int64
+	gate := make(chan struct{})
+
+	cl := accrualClientStub{get: func(ctx context.Context, _ string) (accrual.GetAccrualAPIResponse, error) {
+		n := calls.Add(1)
+		if n == 1 {
+			return accrual.GetAccrualAPIResponse{}, accrual.ErrTooManyRequests{RetryAfter: retryAfter}
+		}
+		select {
+		case <-ctx.Done():
+			return accrual.GetAccrualAPIResponse{}, ctx.Err()
+		case <-gate:
+			return accrual.GetAccrualAPIResponse{Order: "1", Status: "REGISTERED"}, nil
+		}
+	}}
+
+	w, err := NewAccrualWorker(repo, cl, 5*time.Millisecond, 10, 2)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		w.Run(ctx)
+	}()
+	defer cancel()
+
+	// Act
+	// Даем первому ответу 429 шанс быть обработанным.
+	time.Sleep(30 * time.Millisecond)
+
+	// Assert
+	// sleepUntil должен быть выставлен хотя бы в now+retryAfter.
+	sleepUntil := time.Unix(0, w.sleepUntil.Load())
+	assert.Greater(t, sleepUntil, time.Now().Add(100*time.Millisecond))
+
+	cancel()
+	close(gate)
+	select {
+	case <-done:
+	case <-time.After(1 * time.Second):
+		t.Fatal("worker did not stop")
+	}
+}
+
+// TestAccrualWorker_429_GracefulShutdownDuringSleep проверяет, что shutdown работает даже во время сна.
+func TestAccrualWorker_429_GracefulShutdownDuringSleep(t *testing.T) {
+	// Arrange
+	retryAfter := 2 * time.Second
+
+	repo := &orderAccrualRepoStub{listFn: func(_ context.Context, _ int) ([]model.Order, error) {
+		return []model.Order{{Number: "1"}}, nil
+	}}
+	cl := accrualClientStub{get: func(_ context.Context, _ string) (accrual.GetAccrualAPIResponse, error) {
+		return accrual.GetAccrualAPIResponse{}, accrual.ErrTooManyRequests{RetryAfter: retryAfter}
+	}}
+
+	w, err := NewAccrualWorker(repo, cl, 5*time.Millisecond, 10, 2)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		w.Run(ctx)
+	}()
+
+	// Act
+	// Ждем, пока sleepUntil будет выставлен.
+	require.Eventually(t, func() bool {
+		return w.sleepUntil.Load() != 0
+	}, 300*time.Millisecond, 10*time.Millisecond)
+	cancel()
+
+	// Assert
+	select {
+	case <-done:
+		// ok
+	case <-time.After(1 * time.Second):
+		t.Fatal("worker did not stop during backoff sleep")
 	}
 }
 

@@ -50,8 +50,14 @@ func newRetryingHTTPClient(
 				return false, err
 			}
 		}
-		if resp != nil && resp.StatusCode == http.StatusRequestTimeout {
-			return true, nil
+		if resp != nil {
+			// Ошибка 429 обрабатывается на уровне домена, чтобы весь пул воркеров засыпал.
+			if resp.StatusCode == http.StatusTooManyRequests {
+				return false, nil
+			}
+			if resp.StatusCode == http.StatusRequestTimeout {
+				return true, nil
+			}
 		}
 		return defaultCheck(ctx, resp, err)
 	}

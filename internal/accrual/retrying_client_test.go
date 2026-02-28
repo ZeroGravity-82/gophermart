@@ -147,8 +147,8 @@ func TestDo_RetriesOn408(t *testing.T) {
 	assert.Equal(t, int32(3), calls.Load())
 }
 
-// TestDo_RetriesOn429WithRetryAfter проверяет, что клиент повторяет запросы при 429 и учитывает Retry-After.
-func TestDo_RetriesOn429WithRetryAfter(t *testing.T) {
+// TestDo_DoesNotRetryOn429 проверяет, что клиент не повторяет запросы при 429.
+func TestDo_DoesNotRetryOn429(t *testing.T) {
 	// Arrange
 	cl := newRetryingHTTPClient(
 		5*time.Second,
@@ -160,20 +160,13 @@ func TestDo_RetriesOn429WithRetryAfter(t *testing.T) {
 
 	var calls atomic.Int32
 	cl.client.HTTPClient.Transport = roundTripperFunc(func(_ *http.Request) (*http.Response, error) {
-		n := calls.Add(1)
-		if n == 1 {
-			h := make(http.Header)
-			h.Set("Retry-After", "1")
-			return &http.Response{
-				StatusCode: http.StatusTooManyRequests,
-				Body:       io.NopCloser(bytes.NewBufferString(`rate limited`)),
-				Header:     h,
-			}, nil
-		}
+		calls.Add(1)
+		h := make(http.Header)
+		h.Set("Retry-After", "1")
 		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewBufferString(`ok`)),
-			Header:     make(http.Header),
+			StatusCode: http.StatusTooManyRequests,
+			Body:       io.NopCloser(bytes.NewBufferString(`rate limited`)),
+			Header:     h,
 		}, nil
 	})
 
@@ -185,8 +178,6 @@ func TestDo_RetriesOn429WithRetryAfter(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	start := time.Now()
-
 	// Act
 	resp, err := cl.Do(req)
 
@@ -194,9 +185,8 @@ func TestDo_RetriesOn429WithRetryAfter(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	defer resp.Body.Close()
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, int32(2), calls.Load())
-	assert.GreaterOrEqual(t, time.Since(start), 1*time.Second)
+	assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
+	assert.Equal(t, int32(1), calls.Load())
 }
 
 // TestDo_DoesNotRetryOnContextError проверяет, что при ошибках контекста (отмена, истечение) повторы не выполняются.
