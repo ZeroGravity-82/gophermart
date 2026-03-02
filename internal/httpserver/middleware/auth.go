@@ -4,6 +4,7 @@ package middleware
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -33,7 +34,7 @@ func UserIDFromContext(ctx context.Context) (string, error) {
 	}
 	v, ok := value.(string)
 	if !ok {
-		return "", ErrInvalidUserIDType
+		return "", fmt.Errorf("%w: expected string, got %T", ErrInvalidUserIDType, value)
 	}
 	return v, nil
 }
