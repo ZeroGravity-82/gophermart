@@ -1,0 +1,13 @@
+services:
+  postgresql:
+    image: postgres:15
+    ports:
+      - '5432:5432'
+    environment:
+      - POSTGRES_DB=gophermart
+      - POSTGRES_USER=gophermart
+      - POSTGRES_PASSWORD=userpassword
+    volumes:
+      - postgresql:/var/lib/postgresql:rw
+volumes:
+  postgresql:

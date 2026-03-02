@@ -1,0 +1,16 @@
+services:
+  postgresql-test:
+    image: postgres:15
+    ports:
+      - '15432:5432'
+    environment:
+      - POSTGRES_DB=gophermart_test
+      - POSTGRES_USER=gophermart
+      - POSTGRES_PASSWORD=userpassword
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gophermart -d gophermart_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    tmpfs:
+      - /var/lib/postgresql/data
