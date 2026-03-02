@@ -17,15 +17,16 @@ func TestGetConfig_Default(t *testing.T) {
 	os.Args = []string{"cmd"}
 	t.Setenv("ACCRUAL_SYSTEM_ADDRESS", "127.0.0.1:8081")
 	t.Setenv("DATABASE_URI", "postgres://user:pass@localhost:5432/db")
-	require.NoError(t, os.Unsetenv("RUN_ADDRESS"))
-	require.NoError(t, os.Unsetenv("JWT_SECRET"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_POLL_INTERVAL"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_BATCH_SIZE"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_WORKERS"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_LOCK_TTL"))
-	require.NoError(t, os.Unsetenv("LOG_FORMAT"))
-	require.NoError(t, os.Unsetenv("LOG_LEVEL"))
-	require.NoError(t, os.Unsetenv("LOG_ADD_SOURCE"))
+	unsetEnvs(t,
+		"RUN_ADDRESS",
+		"JWT_SECRET",
+		"ACCRUAL_SYSTEM_POLL_INTERVAL",
+		"ACCRUAL_SYSTEM_BATCH_SIZE",
+		"ACCRUAL_SYSTEM_WORKERS",
+		"ACCRUAL_SYSTEM_LOCK_TTL",
+		"LOG_FORMAT",
+		"LOG_LEVEL",
+		"LOG_ADD_SOURCE")
 
 	// Act
 	cfg, err := GetConfig()
@@ -43,6 +44,25 @@ func TestGetConfig_Default(t *testing.T) {
 	assert.Equal(t, "json", cfg.Logging.Format)
 	assert.Equal(t, "info", cfg.Logging.Level)
 	assert.Equal(t, false, cfg.Logging.AddSource)
+}
+
+func unsetEnvs(t *testing.T, keys ...string) {
+	for _, key := range keys {
+		original, exists := os.LookupEnv(key)
+
+		keyCaptured := key
+		originalCaptured := original
+		existsCaptured := exists
+
+		t.Cleanup(func() {
+			if existsCaptured {
+				require.NoError(t, os.Setenv(keyCaptured, originalCaptured))
+			} else {
+				require.NoError(t, os.Unsetenv(keyCaptured))
+			}
+		})
+		require.NoError(t, os.Unsetenv(key))
+	}
 }
 
 // TestGetConfig_Flags проверяет парсинг параметров командной строки сервиса.
@@ -63,16 +83,19 @@ func TestGetConfig_Flags(t *testing.T) {
 		"--log-level=debug",
 		"--log-add-source=true",
 	}
-	require.NoError(t, os.Unsetenv("RUN_ADDRESS"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_ADDRESS"))
-	require.NoError(t, os.Unsetenv("DATABASE_URI"))
-	require.NoError(t, os.Unsetenv("JWT_SECRET"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_POLL_INTERVAL"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_BATCH_SIZE"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_LOCK_TTL"))
-	require.NoError(t, os.Unsetenv("LOG_FORMAT"))
-	require.NoError(t, os.Unsetenv("LOG_LEVEL"))
-	require.NoError(t, os.Unsetenv("LOG_ADD_SOURCE"))
+	unsetEnvs(t,
+		"RUN_ADDRESS",
+		"ACCRUAL_SYSTEM_ADDRESS",
+		"DATABASE_URI",
+		"JWT_SECRET",
+		"ACCRUAL_SYSTEM_POLL_INTERVAL",
+		"ACCRUAL_SYSTEM_BATCH_SIZE",
+		"ACCRUAL_SYSTEM_WORKERS",
+		"ACCRUAL_SYSTEM_LOCK_TTL",
+		"LOG_FORMAT",
+		"LOG_LEVEL",
+		"LOG_ADD_SOURCE",
+	)
 
 	// Act
 	cfg, err := GetConfig()
@@ -110,16 +133,19 @@ func TestGetConfig_LongNameFlags(t *testing.T) {
 		"--log-level=debug",
 		"--log-add-source=true",
 	}
-	require.NoError(t, os.Unsetenv("RUN_ADDRESS"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_ADDRESS"))
-	require.NoError(t, os.Unsetenv("DATABASE_URI"))
-	require.NoError(t, os.Unsetenv("JWT_SECRET"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_POLL_INTERVAL"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_BATCH_SIZE"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_LOCK_TTL"))
-	require.NoError(t, os.Unsetenv("LOG_FORMAT"))
-	require.NoError(t, os.Unsetenv("LOG_LEVEL"))
-	require.NoError(t, os.Unsetenv("LOG_ADD_SOURCE"))
+	unsetEnvs(t,
+		"RUN_ADDRESS",
+		"ACCRUAL_SYSTEM_ADDRESS",
+		"DATABASE_URI",
+		"JWT_SECRET",
+		"ACCRUAL_SYSTEM_POLL_INTERVAL",
+		"ACCRUAL_SYSTEM_BATCH_SIZE",
+		"ACCRUAL_SYSTEM_WORKERS",
+		"ACCRUAL_SYSTEM_LOCK_TTL",
+		"LOG_FORMAT",
+		"LOG_LEVEL",
+		"LOG_ADD_SOURCE",
+	)
 
 	// Act
 	cfg, err := GetConfig()
@@ -228,15 +254,18 @@ func TestGetConfig_AccrualAddrRequired(t *testing.T) {
 	pflag.CommandLine = pflag.NewFlagSet(os.Args[0], pflag.ExitOnError)
 	os.Args = []string{"cmd"}
 	t.Setenv("DATABASE_URI", "postgres://user:pass@localhost:5432/db")
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_ADDRESS"))
-	require.NoError(t, os.Unsetenv("RUN_ADDRESS"))
-	require.NoError(t, os.Unsetenv("JWT_SECRET"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_POLL_INTERVAL"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_BATCH_SIZE"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_WORKERS"))
-	require.NoError(t, os.Unsetenv("LOG_FORMAT"))
-	require.NoError(t, os.Unsetenv("LOG_LEVEL"))
-	require.NoError(t, os.Unsetenv("LOG_ADD_SOURCE"))
+	unsetEnvs(t,
+		"ACCRUAL_SYSTEM_ADDRESS",
+		"RUN_ADDRESS",
+		"JWT_SECRET",
+		"ACCRUAL_SYSTEM_POLL_INTERVAL",
+		"ACCRUAL_SYSTEM_BATCH_SIZE",
+		"ACCRUAL_SYSTEM_WORKERS",
+		"ACCRUAL_SYSTEM_LOCK_TTL",
+		"LOG_FORMAT",
+		"LOG_LEVEL",
+		"LOG_ADD_SOURCE",
+	)
 
 	// Act
 	_, err := GetConfig()
@@ -251,15 +280,18 @@ func TestGetConfig_DatabaseURIRequired(t *testing.T) {
 	pflag.CommandLine = pflag.NewFlagSet(os.Args[0], pflag.ExitOnError)
 	os.Args = []string{"cmd"}
 	t.Setenv("ACCRUAL_SYSTEM_ADDRESS", "127.0.0.1:8081")
-	require.NoError(t, os.Unsetenv("DATABASE_URI"))
-	require.NoError(t, os.Unsetenv("RUN_ADDRESS"))
-	require.NoError(t, os.Unsetenv("JWT_SECRET"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_POLL_INTERVAL"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_BATCH_SIZE"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_WORKERS"))
-	require.NoError(t, os.Unsetenv("LOG_FORMAT"))
-	require.NoError(t, os.Unsetenv("LOG_LEVEL"))
-	require.NoError(t, os.Unsetenv("LOG_ADD_SOURCE"))
+	unsetEnvs(t,
+		"DATABASE_URI",
+		"RUN_ADDRESS",
+		"JWT_SECRET",
+		"ACCRUAL_SYSTEM_POLL_INTERVAL",
+		"ACCRUAL_SYSTEM_BATCH_SIZE",
+		"ACCRUAL_SYSTEM_WORKERS",
+		"ACCRUAL_SYSTEM_LOCK_TTL",
+		"LOG_FORMAT",
+		"LOG_LEVEL",
+		"LOG_ADD_SOURCE",
+	)
 
 	// Act
 	_, err := GetConfig()
@@ -276,13 +308,16 @@ func TestGetConfig_RunAddrInvalid(t *testing.T) {
 	t.Setenv("RUN_ADDRESS", "localhost:8080/path")
 	t.Setenv("ACCRUAL_SYSTEM_ADDRESS", "127.0.0.1:8081")
 	t.Setenv("DATABASE_URI", "postgres://user:pass@localhost:5432/db")
-	require.NoError(t, os.Unsetenv("JWT_SECRET"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_POLL_INTERVAL"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_BATCH_SIZE"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_WORKERS"))
-	require.NoError(t, os.Unsetenv("LOG_FORMAT"))
-	require.NoError(t, os.Unsetenv("LOG_LEVEL"))
-	require.NoError(t, os.Unsetenv("LOG_ADD_SOURCE"))
+	unsetEnvs(t,
+		"JWT_SECRET",
+		"ACCRUAL_SYSTEM_POLL_INTERVAL",
+		"ACCRUAL_SYSTEM_BATCH_SIZE",
+		"ACCRUAL_SYSTEM_WORKERS",
+		"ACCRUAL_SYSTEM_LOCK_TTL",
+		"LOG_FORMAT",
+		"LOG_LEVEL",
+		"LOG_ADD_SOURCE",
+	)
 
 	// Act
 	_, err := GetConfig()
@@ -299,14 +334,17 @@ func TestGetConfig_AccrualAddrInvalid(t *testing.T) {
 	os.Args = []string{"cmd"}
 	t.Setenv("ACCRUAL_SYSTEM_ADDRESS", "127.0.0.1:8081/path")
 	t.Setenv("DATABASE_URI", "postgres://user:pass@localhost:5432/db")
-	require.NoError(t, os.Unsetenv("RUN_ADDRESS"))
-	require.NoError(t, os.Unsetenv("JWT_SECRET"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_POLL_INTERVAL"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_BATCH_SIZE"))
-	require.NoError(t, os.Unsetenv("ACCRUAL_SYSTEM_WORKERS"))
-	require.NoError(t, os.Unsetenv("LOG_FORMAT"))
-	require.NoError(t, os.Unsetenv("LOG_LEVEL"))
-	require.NoError(t, os.Unsetenv("LOG_ADD_SOURCE"))
+	unsetEnvs(t,
+		"RUN_ADDRESS",
+		"JWT_SECRET",
+		"ACCRUAL_SYSTEM_POLL_INTERVAL",
+		"ACCRUAL_SYSTEM_BATCH_SIZE",
+		"ACCRUAL_SYSTEM_WORKERS",
+		"ACCRUAL_SYSTEM_LOCK_TTL",
+		"LOG_FORMAT",
+		"LOG_LEVEL",
+		"LOG_ADD_SOURCE",
+	)
 
 	// Act
 	_, err := GetConfig()
